@@ -12,7 +12,7 @@
         "password": ""
     },
     "install": {
-        "language": "en_US",
+        "language": "es_ES",
         "defaultOwner": "www-data",
         "defaultGroup": "www-data",
         "siteUrl": "http://localhost/ext-estadisticas-mercado/site",

@@ -1,9 +1,9 @@
 {
-    "module": "{@name}",
-    "name": "{@nameLabel}",
-    "description": "{@description}",
-    "author": "{@author}",
-    "bundled": {@bundled},
+    "module": "EstadisticasMercado",
+    "name": "Estadisticas mercado",
+    "description": "Reportes de estadisticas de mercado.",
+    "author": "Sebastian Silva",
+    "bundled": true,
     "acceptableVersions": [
         ">=9.1.0"
     ],

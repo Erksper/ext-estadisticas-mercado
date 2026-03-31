@@ -1,0 +1,6 @@
+{
+    "controller": "estadisticas-mercado:controllers/main",
+    "views": {
+        "list": "estadisticas-mercado:views/index"
+    }
+}

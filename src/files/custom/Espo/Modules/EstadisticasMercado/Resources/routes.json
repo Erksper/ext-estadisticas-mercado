@@ -1,0 +1,16 @@
+[
+    {
+        "route": "/EstadisticasMercado/action/:action",
+        "method": "GET",
+        "params": {
+            "controller": "EstadisticasMercado"
+        }
+    },
+    {
+        "route": "/EstadisticasMercado/action/:action",
+        "method": "POST",
+        "params": {
+            "controller": "EstadisticasMercado"
+        }
+    }
+]
