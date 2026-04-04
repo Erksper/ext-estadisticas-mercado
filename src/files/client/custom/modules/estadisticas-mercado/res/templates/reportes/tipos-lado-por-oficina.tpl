@@ -2,11 +2,11 @@
 
 <div class="em-page-header">
     <div class="em-header-icon">
-        <i class="fas fa-exchange-alt"></i>
+        <i class="fas fa-building"></i>
     </div>
     <div>
-        <h2 class="em-page-title">Lado por Tipo de Operación</h2>
-        <p class="em-page-sub">Conteo de lados por Venta / Alquiler agrupados por oficina</p>
+        <h2 class="em-page-title">Tipos de Lado por Oficina</h2>
+        <p class="em-page-sub">Conteo de lados por tipo (Captador/Cerrador) agrupados por oficina</p>
     </div>
 </div>
 

@@ -2,11 +2,11 @@
 
 <div class="em-page-header">
     <div class="em-header-icon">
-        <i class="fas fa-exchange-alt"></i>
+        <i class="fas fa-user-tie"></i>
     </div>
     <div>
-        <h2 class="em-page-title">Lado por Tipo de Operación</h2>
-        <p class="em-page-sub">Conteo de lados por Venta / Alquiler agrupados por oficina</p>
+        <h2 class="em-page-title">Tipos de Lado por Asesor</h2>
+        <p class="em-page-sub">Conteo de lados por tipo (Captador/Cerrador) agrupados por asesor</p>
     </div>
 </div>
 
@@ -21,6 +21,13 @@
             <label class="em-filtro-label">CLA</label>
             <select id="em-filtro-cla" class="em-filtro-select">
                 <option value="">Todos los CLAs</option>
+            </select>
+        </div>
+
+        <div class="em-filtro-grupo">
+            <label class="em-filtro-label">Oficina</label>
+            <select id="em-filtro-oficina" class="em-filtro-select" disabled>
+                <option value="">Todas las oficinas</option>
             </select>
         </div>
 

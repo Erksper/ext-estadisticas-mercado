@@ -10,7 +10,12 @@ define('estadisticas-mercado:views/index', ['view'], function (View) {
                 if (!reporte) return;
 
                 var rutas = {
-                    ladosPorTipoOperacion: '#EstadisticasMercado/ladosPorTipoOperacion'
+                        ladosPorTipoOperacion: '#EstadisticasMercado/ladosPorTipoOperacion',
+                        rangoPrecios: '#EstadisticasMercado/rangoPrecios',
+                        tiposLadoPorAsesor: '#EstadisticasMercado/tiposLadoPorAsesor',
+                        tiposLadoPorOficina: '#EstadisticasMercado/tiposLadoPorOficina',
+                        estadisticasM2: '#EstadisticasMercado/estadisticasM2',
+                        estadisticasM2Cla: '#EstadisticasMercado/estadisticasM2Cla'
                 };
 
                 var ruta = rutas[reporte];
