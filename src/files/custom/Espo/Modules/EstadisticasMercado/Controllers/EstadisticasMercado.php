@@ -476,244 +476,479 @@ class EstadisticasMercado extends \Espo\Core\Controllers\Record
         }
     }
 
-    public function getActionGetLadosIdsParaDetalle($params, $data, $request)
+    public function getActionGetDetalleLados($params, $data, $request)
     {
         try {
             $pdo = $this->getPDO();
-            $reporte = $request->get('reporte');
-            $tipoSeleccion = $request->get('tipoSeleccion');
-            $identificador = $request->get('identificador');
-            $filtrosJson = $request->get('filtros');
-            $filtros = json_decode($filtrosJson, true);
-            if (!$filtros) $filtros = [];
-
-            // Extraer parámetros comunes
-            $claId = $filtros['claId'] ?? null;
-            $oficinaId = $filtros['oficinaId'] ?? null;
-            $fechaInicio = $filtros['fechaInicio'] ?? null;
-            $fechaFin = $filtros['fechaFin'] ?? null;
-            $tipoOperacion = $filtros['tipoOperacion'] ?? null;
-            $tipoPropiedad = $filtros['tipoPropiedad'] ?? null;
-            $subtipoPropiedad = $filtros['subtipoPropiedad'] ?? null;
-            $ciudad = $filtros['ciudad'] ?? null;
-
-            // Condiciones base
-            $where = ['l.deleted = 0', 'p.deleted = 0', 'p.fecha_cierre IS NOT NULL'];
-            $params = [];
-
-            // Fechas
+    
+            // ── 1. Parámetros de paginación ──────────────────────────────────────
+            $pagina    = max(1, (int) ($request->get('pagina')    ?? 1));
+            $porPagina = max(1, min(100, (int) ($request->get('porPagina') ?? 25)));
+            $offset    = ($pagina - 1) * $porPagina;
+    
+            // ── 2. Parámetros de contexto ────────────────────────────────────────
+            $reporte       = $request->get('reporte')       ?? '';
+            $seleccion     = $request->get('seleccion')     ?? '';   // 'columna' | 'fila'
+            $identificador = $request->get('identificador') ?? '';
+    
+            // ── 3. Filtros comunes ───────────────────────────────────────────────
+            $claId           = $request->get('claId')           ?: null;
+            $oficinaId       = $request->get('oficinaId')       ?: null;
+            $asesorId        = $request->get('asesorId')        ?: null;
+            $fechaInicio     = $request->get('fechaInicio')     ?: null;
+            $fechaFin        = $request->get('fechaFin')        ?: null;
+            $tipoOperacion   = $request->get('tipoOperacion')   ?: null;
+            $tipoPropiedad   = $request->get('tipoPropiedad')   ?: null;
+            $subtipo         = $request->get('subtipoPropiedad') ?: null;
+            $ciudad          = $request->get('ciudad')          ?: null;
+    
+            // ── 4. Construir condiciones WHERE base ──────────────────────────────
+            //    Siempre filtramos lados y propiedades no eliminados,
+            //    y solo propiedades con fecha_cierre (operación cerrada).
+            $where  = [
+                'l.deleted = 0',
+                'p.deleted = 0',
+                'p.fecha_cierre IS NOT NULL',
+            ];
+            $binds  = [];
+    
+            // ── 4a. Rango de fechas (obligatorio en todos los reportes) ──────────
             if ($fechaInicio && $fechaFin) {
                 $where[] = 'p.fecha_cierre BETWEEN ? AND ?';
-                $params[] = $fechaInicio;
-                $params[] = $fechaFin;
+                $binds[] = $fechaInicio;
+                $binds[] = $fechaFin;
             } elseif ($fechaInicio) {
                 $where[] = 'p.fecha_cierre >= ?';
-                $params[] = $fechaInicio;
+                $binds[] = $fechaInicio;
             } elseif ($fechaFin) {
                 $where[] = 'p.fecha_cierre <= ?';
-                $params[] = $fechaFin;
+                $binds[] = $fechaFin;
             }
-
-            // Tipo operación
-            if ($tipoOperacion) {
+    
+            // ── 4b. Tipo de operación (cuando viene como filtro global) ──────────
+            //    Solo se aplica aquí si NO es un filtro que ya maneja el switch
+            //    (rangoPrecios y m2 lo pasan como filtro; los otros lo usan en el switch).
+            if ($tipoOperacion && in_array($reporte, ['rangoPrecios', 'estadisticasM2', 'estadisticasM2Cla'])) {
                 $where[] = 'p.tipo_operacion = ?';
-                $params[] = $tipoOperacion;
-            } else {
-                $where[] = "p.tipo_operacion IN ('Venta','Alquiler')";
+                $binds[] = $tipoOperacion;
             }
-
-            // Tipo propiedad
+    
+            // ── 4c. Tipo de propiedad y subtipo (rangos y m2) ────────────────────
             if ($tipoPropiedad) {
                 $where[] = 'p.tipo_propiedad = ?';
-                $params[] = $tipoPropiedad;
+                $binds[] = $tipoPropiedad;
             }
-            // Subtipo propiedad
-            if ($subtipoPropiedad) {
+            if ($subtipo) {
                 $where[] = 'p.sub_tipo_propiedad LIKE ?';
-                $params[] = '%' . $subtipoPropiedad . '%';
+                $binds[] = '%' . $subtipo . '%';
             }
-            // Ciudad (para reporte estadisticasM2)
+    
+            // ── 4d. Ciudad (solo estadisticasM2) ─────────────────────────────────
             if ($ciudad) {
                 $where[] = 'p.ciudad = ?';
-                $params[] = $ciudad;
+                $binds[] = $ciudad;
             }
-
-            // CLA: se resuelven las oficinas que pertenecen al CLA
-            if ($claId && !$oficinaId) {
-                $oficinas = $this->resolverOficinas($pdo, $claId);
-                if (empty($oficinas)) {
-                    return ['success' => true, 'ladosIds' => ''];
+    
+            // ── 5. Resolución de oficinas por CLA ────────────────────────────────
+            //    Varios reportes necesitan filtrar por el conjunto de oficinas del CLA.
+            //    Lo resolvemos una sola vez aquí.
+            $oficinasDelCla = [];   // ids de oficinas del CLA (vacío = sin restricción de CLA)
+            if ($claId) {
+                $oficinasDelCla = $this->resolverOficinaIds($pdo, $claId);
+                // Si el CLA no tiene oficinas, devolvemos vacío directamente.
+                if (empty($oficinasDelCla)) {
+                    return $this->respuestaVacia($pagina, $porPagina);
                 }
-                $oficinaIds = array_column($oficinas, 'id');
-                $placeholders = implode(',', array_fill(0, count($oficinaIds), '?'));
-                $where[] = "l.oficina_id IN ($placeholders)";
-                $params = array_merge($params, $oficinaIds);
-            } elseif ($oficinaId) {
-                $where[] = 'l.oficina_id = ?';
-                $params[] = $oficinaId;
             }
-
-            // Construir consulta según el reporte y tipo de selección
-            $sql = "SELECT GROUP_CONCAT(DISTINCT l.id) AS lados_ids 
-                    FROM lados l 
-                    INNER JOIN propiedades p ON p.id = l.propiedad_id 
-                    WHERE " . implode(' AND ', $where);
-
+    
+            // ── 6. Condiciones específicas por reporte y selección ───────────────
             switch ($reporte) {
+    
+                // ─────────────────────────────────────────────────────────────────
+                // REPORTE: Lado por Tipo de Operación
+                //   columna → filtra por oficina específica  (identificador = oficinaId)
+                //             muestra lados de tipo Venta Y Alquiler (filas visibles)
+                //   fila    → filtra por tipo de operación   (identificador = 'Venta'|'Alquiler')
+                //             scope = todas las oficinas del CLA (o todas si no hay CLA)
+                // ─────────────────────────────────────────────────────────────────
                 case 'ladosPorTipoOperacion':
-                    if ($tipoSeleccion === 'columna') {
-                        // Ya se agregó oficinaId arriba
-                    } elseif ($tipoSeleccion === 'fila') {
-                        $where[] = 'p.tipo_operacion = ?';
-                        $params[] = $identificador;
-                    }
-                    break;
-
-                case 'ladosPorAsesor':
-                    if ($tipoSeleccion === 'columna') {
-                        $where[] = 'l.asesor_id = ?';
-                        $params[] = $identificador;
-                    } elseif ($tipoSeleccion === 'fila') {
-                        $tipoLado = $identificador === 'Captador (Obtención)' ? 'obtencion' : 'cierre';
-                        $where[] = 'l.tipo_lado = ?';
-                        $params[] = $tipoLado;
-                    }
-                    break;
-
-                case 'ladosPorOficina':
-                    if ($tipoSeleccion === 'columna') {
+                    // Siempre restringir a los tipos de operación visibles en el reporte
+                    $where[] = "p.tipo_operacion IN ('Venta', 'renta')";
+    
+                    if ($seleccion === 'columna') {
+                        // identificador = id de la oficina clickeada
                         $where[] = 'l.oficina_id = ?';
-                        $params[] = $identificador;
-                    } elseif ($tipoSeleccion === 'fila') {
-                        $tipoLado = $identificador === 'Captador (Obtención)' ? 'obtencion' : 'cierre';
-                        $where[] = 'l.tipo_lado = ?';
-                        $params[] = $tipoLado;
-                    }
-                    break;
-
-                case 'rangoPrecios':
-                    if ($tipoSeleccion === 'columna') {
-                        $rangos = [
-                            '< 2500'       => ['min' => null, 'max' => 2500],
-                            '2500-5000'    => ['min' => 2500, 'max' => 5000],
-                            '5000-10000'   => ['min' => 5000, 'max' => 10000],
-                            '10000-25000'  => ['min' => 10000, 'max' => 25000],
-                            '25000-50000'  => ['min' => 25000, 'max' => 50000],
-                            '50000-100000' => ['min' => 50000, 'max' => 100000],
-                            '100000-250000'=> ['min' => 100000, 'max' => 250000],
-                            '250000-500000'=> ['min' => 250000, 'max' => 500000],
-                            '> 500000'     => ['min' => 500000, 'max' => null]
-                        ];
-                        $rango = $rangos[$identificador] ?? null;
-                        if ($rango) {
-                            $precioExpr = "COALESCE(NULLIF(p.precio_venta, 0), NULLIF(p.precio_renta, 0))";
-                            if ($rango['min'] === null) {
-                                $where[] = "$precioExpr < ?";
-                                $params[] = $rango['max'];
-                            } elseif ($rango['max'] === null) {
-                                $where[] = "$precioExpr >= ?";
-                                $params[] = $rango['min'];
-                            } else {
-                                $where[] = "$precioExpr >= ? AND $precioExpr < ?";
-                                $params[] = $rango['min'];
-                                $params[] = $rango['max'];
-                            }
+                        $binds[] = $identificador;
+    
+                    } elseif ($seleccion === 'fila') {
+                        // identificador = 'Venta' o 'Alquiler' (label del frontend)
+                        // En BD: 'Venta' → 'Venta', 'Alquiler' → 'renta'
+                        $valorBD = ($identificador === 'Alquiler') ? 'renta' : 'Venta';
+                        // Eliminar la condición IN genérica que pusimos arriba
+                        // y reemplazar por el valor concreto
+                        $where = array_filter($where, function ($c) {
+                            return $c !== "p.tipo_operacion IN ('Venta', 'renta')";
+                        });
+                        $where   = array_values($where);
+                        $where[] = 'p.tipo_operacion = ?';
+                        $binds[] = $valorBD;
+    
+                        // Scope: oficinas del CLA (si hay CLA) o todas
+                        if (!empty($oficinasDelCla)) {
+                            $ph      = implode(',', array_fill(0, count($oficinasDelCla), '?'));
+                            $where[] = "l.oficina_id IN ($ph)";
+                            $binds   = array_merge($binds, $oficinasDelCla);
                         }
-                    } elseif ($tipoSeleccion === 'fila') {
-                        $where[] = 'p.sub_tipo_propiedad = ?';
-                        $params[] = $identificador;
                     }
                     break;
-
-                case 'estadisticasM2':
-                case 'estadisticasM2Cla':
-                    // En estos reportes solo hay botón "Ver detalle" por urbanización
-                    $where[] = 'p.urbanizacion = ?';
-                    $params[] = $identificador;
+    
+                // ─────────────────────────────────────────────────────────────────
+                // REPORTE: Tipo de Lado por Asesor
+                //   columna → filtra por asesor específico   (identificador = userId)
+                //   fila    → filtra por tipo de lado        (identificador = 'Captador (Obtención)'|'Cerrador (Cierre)')
+                //             scope = CLA + oficina (si existen)
+                // ─────────────────────────────────────────────────────────────────
+                case 'ladosPorAsesor':
+                    // Solo tipos de lado del reporte
+                    $where[] = "l.tipo_lado IN ('obtencion', 'cierre')";
+    
+                    if ($seleccion === 'columna') {
+                        // identificador = userId
+                        $where[] = 'l.asesor_id = ?';
+                        $binds[] = $identificador;
+    
+                    } elseif ($seleccion === 'fila') {
+                        // Mapear label → valor BD
+                        $tipoLadoBD = ($identificador === 'Captador (Obtención)') ? 'obtencion' : 'cierre';
+                        $where[] = 'l.tipo_lado = ?';
+                        $binds[] = $tipoLadoBD;
+    
+                        // Scope por oficina (si hay)
+                        if ($oficinaId) {
+                            $where[] = 'l.oficina_id = ?';
+                            $binds[] = $oficinaId;
+                        }
+                        // Scope por CLA (si hay)
+                        if (!empty($oficinasDelCla)) {
+                            $ph      = implode(',', array_fill(0, count($oficinasDelCla), '?'));
+                            $where[] = "l.oficina_id IN ($ph)";
+                            $binds   = array_merge($binds, $oficinasDelCla);
+                        }
+                    }
                     break;
-
+    
+                // ─────────────────────────────────────────────────────────────────
+                // REPORTE: Tipo de Lado por Oficina
+                //   columna → filtra por oficina específica  (identificador = oficinaId)
+                //   fila    → filtra por tipo de lado        (identificador = 'Captador (Obtención)'|'Cerrador (Cierre)')
+                //             scope = todas las oficinas del CLA (o todas)
+                // ─────────────────────────────────────────────────────────────────
+                case 'ladosPorOficina':
+                    $where[] = "l.tipo_lado IN ('obtencion', 'cierre')";
+    
+                    if ($seleccion === 'columna') {
+                        $where[] = 'l.oficina_id = ?';
+                        $binds[] = $identificador;
+    
+                    } elseif ($seleccion === 'fila') {
+                        $tipoLadoBD = ($identificador === 'Captador (Obtención)') ? 'obtencion' : 'cierre';
+                        $where[] = 'l.tipo_lado = ?';
+                        $binds[] = $tipoLadoBD;
+    
+                        if (!empty($oficinasDelCla)) {
+                            $ph      = implode(',', array_fill(0, count($oficinasDelCla), '?'));
+                            $where[] = "l.oficina_id IN ($ph)";
+                            $binds   = array_merge($binds, $oficinasDelCla);
+                        }
+                    }
+                    break;
+    
+                // ─────────────────────────────────────────────────────────────────
+                // REPORTE: Rango de Precios
+                //   columna → filtra por rango de precio     (identificador = '< 2500' | '2500-5000' | …)
+                //             + CLA + oficina + filtros globales
+                //   fila    → filtra por subtipo de propiedad (identificador = nombre del subtipo)
+                //             + CLA + oficina + filtros globales
+                // ─────────────────────────────────────────────────────────────────
+                case 'rangoPrecios':
+                    // Restricción de oficinas
+                    if ($oficinaId) {
+                        $where[] = 'l.oficina_id = ?';
+                        $binds[] = $oficinaId;
+                    } elseif (!empty($oficinasDelCla)) {
+                        $ph      = implode(',', array_fill(0, count($oficinasDelCla), '?'));
+                        $where[] = "l.oficina_id IN ($ph)";
+                        $binds   = array_merge($binds, $oficinasDelCla);
+                    }
+    
+                    // Siempre necesitamos precio
+                    $precioExpr = "COALESCE(NULLIF(p.precio_venta, 0), NULLIF(p.precio_renta, 0))";
+                    $where[] = "($precioExpr) > 0";
+    
+                    if ($seleccion === 'columna') {
+                        // Mapear label del rango a condición SQL
+                        $rangoCondicion = $this->rangoACondicion($identificador, $precioExpr, $binds);
+                        if ($rangoCondicion) {
+                            $where[] = $rangoCondicion;
+                        }
+    
+                    } elseif ($seleccion === 'fila') {
+                        // identificador = subtipo de propiedad exacto
+                        $where[] = 'p.sub_tipo_propiedad = ?';
+                        $binds[] = $identificador;
+                    }
+                    break;
+    
+                // ─────────────────────────────────────────────────────────────────
+                // REPORTE: Estadísticas m² por CLA
+                //   solo tiene botón "Ver detalle" por urbanización
+                //   identificador = nombre de la urbanización
+                // ─────────────────────────────────────────────────────────────────
+                case 'estadisticasM2Cla':
+                    // Filtrar por los usuarios del CLA (y opcionalmente oficina)
+                    $userIds = $this->resolverUserIdsDeCla($pdo, $claId, $oficinaId);
+                    if (empty($userIds)) {
+                        return $this->respuestaVacia($pagina, $porPagina);
+                    }
+                    $ph      = implode(',', array_fill(0, count($userIds), '?'));
+                    $where[] = "l.asesor_id IN ($ph)";
+                    $binds   = array_merge($binds, $userIds);
+    
+                    // Tipo de operación
+                    if (!$tipoOperacion) {
+                        $where[] = "p.tipo_operacion IN ('Venta', 'renta')";
+                    }
+    
+                    // Urbanización
+                    $where[] = 'p.urbanizacion = ?';
+                    $binds[] = $identificador;
+                    break;
+    
+                // ─────────────────────────────────────────────────────────────────
+                // REPORTE: Informe Estadístico por m² (por ciudad)
+                //   identificador = nombre de la urbanización
+                // ─────────────────────────────────────────────────────────────────
+                case 'estadisticasM2':
+                    if (!$tipoOperacion) {
+                        $where[] = "p.tipo_operacion IN ('Venta', 'renta')";
+                    }
+                    // Ciudad ya fue añadida arriba (4d)
+                    // Urbanización
+                    $where[] = 'p.urbanizacion = ?';
+                    $binds[] = $identificador;
+                    break;
+    
                 default:
-                    return ['success' => false, 'error' => 'Reporte no soportado'];
+                    return ['success' => false, 'error' => 'Reporte no reconocido: ' . $reporte];
             }
-
-            // Reconstruir consulta con todas las condiciones añadidas
-            $sqlFinal = "SELECT GROUP_CONCAT(DISTINCT l.id) AS lados_ids 
-                        FROM lados l 
-                        INNER JOIN propiedades p ON p.id = l.propiedad_id 
-                        WHERE " . implode(' AND ', $where);
-            $sth = $pdo->prepare($sqlFinal);
-            $sth->execute($params);
-            $row = $sth->fetch(\PDO::FETCH_ASSOC);
-            $ladosIds = $row['lados_ids'] ?? '';
-
-            return ['success' => true, 'ladosIds' => $ladosIds];
-
-        } catch (\Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    public function postActionGetPropiedadesPorLados($params, $data, $request)
-    {
-        try {
-            $pdo = $this->getPDO();
-            
-            // Leer parámetros del cuerpo de la petición (JSON)
-            $body = json_decode(file_get_contents('php://input'), true);
-            $ladosIds = $body['ladosIds'] ?? null;
-            $pagina = (int)($body['pagina'] ?? 1);
-            $porPagina = (int)($body['porPagina'] ?? 25);
-            
-            if (empty($ladosIds)) {
-                return ['success' => false, 'error' => 'No se proporcionaron IDs de lados.'];
+    
+            // ── 7. Query de conteo total ─────────────────────────────────────────
+            $whereSql  = implode(' AND ', $where);
+            $sqlCount  = "SELECT COUNT(l.id) AS total
+                        FROM lados l
+                        INNER JOIN propiedades p ON p.id = l.propiedad_id
+                        WHERE $whereSql";
+    
+            $sthCount = $pdo->prepare($sqlCount);
+            $sthCount->execute($binds);
+            $total = (int) $sthCount->fetchColumn();
+    
+            // ── 8. Query de datos paginados ──────────────────────────────────────
+            $sqlData = "SELECT
+                            l.id                                                                    AS lado_id,
+                            p.id                                                                    AS propiedad_id,
+                            CONCAT_WS(', ',
+                                NULLIF(TRIM(p.numero), ''),
+                                NULLIF(TRIM(p.calle), ''),
+                                NULLIF(TRIM(p.urbanizacion), ''),
+                                NULLIF(TRIM(p.municipio), ''),
+                                NULLIF(TRIM(p.ciudad), ''),
+                                NULLIF(TRIM(p.estado), '')
+                            )                                                                       AS direccion,
+                            l.tipo_lado,
+                            p.tipo_operacion,
+                            t.name                                                                  AS oficina_nombre,
+                            CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,''))       AS asesor_nombre,
+                            p.tipo_propiedad,
+                            p.sub_tipo_propiedad,
+                            COALESCE(NULLIF(p.precio_venta, 0), NULLIF(p.precio_renta, 0))         AS precio_inicial,
+                            p.precio_cierre,
+                            p.m2_c                                                                  AS area_construccion,
+                            CASE WHEN p.m2_c > 0 AND p.precio_cierre > 0
+                                THEN ROUND(p.precio_cierre / p.m2_c, 2)
+                                ELSE NULL
+                            END                                                                     AS precio_por_m2
+                        FROM lados l
+                        INNER JOIN propiedades p ON p.id = l.propiedad_id
+                        LEFT  JOIN team t        ON t.id = l.oficina_id
+                        LEFT  JOIN user u        ON u.id = l.asesor_id
+                        WHERE $whereSql
+                        ORDER BY p.fecha_cierre DESC, p.id ASC
+                        LIMIT ? OFFSET ?";
+    
+            $sthData = $pdo->prepare($sqlData);
+    
+            // Bindear los parámetros del WHERE como strings (posición 1-based)
+            foreach ($binds as $i => $valor) {
+                $sthData->bindValue($i + 1, $valor, \PDO::PARAM_STR);
             }
-            if (is_string($ladosIds)) {
-                $ladosIds = explode(',', $ladosIds);
+    
+            // LIMIT y OFFSET deben bindearse como enteros explícitamente,
+            // de lo contrario MariaDB los recibe entre comillas y lanza error de sintaxis
+            $sthData->bindValue(count($binds) + 1, $porPagina, \PDO::PARAM_INT);
+            $sthData->bindValue(count($binds) + 2, $offset,    \PDO::PARAM_INT);
+    
+            $sthData->execute();
+            $filas       = $sthData->fetchAll(\PDO::FETCH_ASSOC);
+    
+            // ── 9. Normalizar valores ────────────────────────────────────────────
+            foreach ($filas as &$fila) {
+                // Mapear tipo_lado y tipo_operacion a labels legibles
+                $fila['tipo_lado']      = $this->labelTipoLado($fila['tipo_lado']);
+                $fila['tipo_operacion'] = $this->labelTipoOperacion($fila['tipo_operacion']);
+                // Castear numéricos
+                foreach (['precio_inicial', 'precio_cierre', 'area_construccion', 'precio_por_m2'] as $campo) {
+                    $fila[$campo] = $fila[$campo] !== null ? (float) $fila[$campo] : null;
+                }
             }
-            $total = count($ladosIds);
-            
-            $offset = ($pagina - 1) * $porPagina;
-            $idsPagina = array_slice($ladosIds, $offset, $porPagina);
-            
-            if (empty($idsPagina)) {
-                return ['success' => true, 'data' => [], 'total' => $total, 'pagina' => $pagina, 'porPagina' => $porPagina];
-            }
-            
-            $placeholders = implode(',', array_fill(0, count($idsPagina), '?'));
-            $sql = "SELECT 
-                        l.id AS lado_id,
-                        p.id AS propiedad_id,
-                        CONCAT_WS(', ', p.numero, p.calle, p.urbanizacion, p.municipio, p.ciudad, p.estado) AS direccion,
-                        l.tipo_lado,
-                        p.tipo_operacion,
-                        t.name AS oficina_nombre,
-                        CONCAT(u.first_name, ' ', u.last_name) AS asesor_nombre,
-                        p.tipo_propiedad,
-                        p.sub_tipo_propiedad,
-                        COALESCE(NULLIF(p.precio_venta, 0), NULLIF(p.precio_renta, 0)) AS precio_inicial,
-                        p.precio_cierre,
-                        p.m2_c AS area_construccion,
-                        CASE WHEN p.m2_c > 0 THEN p.precio_cierre / p.m2_c ELSE NULL END AS precio_por_m2
-                    FROM lados l
-                    INNER JOIN propiedades p ON p.id = l.propiedad_id
-                    LEFT JOIN team t ON t.id = l.oficina_id
-                    LEFT JOIN user u ON u.id = l.asesor_id
-                    WHERE l.id IN ($placeholders)
-                    ORDER BY p.id";
-            $sth = $pdo->prepare($sql);
-            $sth->execute($idsPagina);
-            $rows = $sth->fetchAll(\PDO::FETCH_ASSOC);
-            
+            unset($fila);
+    
             return [
-                'success' => true,
-                'data' => $rows,
-                'total' => $total,
-                'pagina' => $pagina,
-                'porPagina' => $porPagina
+                'success'   => true,
+                'data'      => $filas,
+                'total'     => $total,
+                'pagina'    => $pagina,
+                'porPagina' => $porPagina,
             ];
+    
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }   
+
+    protected function resolverOficinaIds($pdo, $claId)
+    {
+        $sth = $pdo->prepare(
+            "SELECT DISTINCT user_id FROM team_user WHERE team_id = ? AND deleted = 0"
+        );
+        $sth->execute([$claId]);
+        $userIds = $sth->fetchAll(\PDO::FETCH_COLUMN);
+    
+        if (empty($userIds)) return [];
+    
+        $ph  = implode(',', array_fill(0, count($userIds), '?'));
+        $sth = $pdo->prepare(
+            "SELECT DISTINCT t.id
+            FROM team t
+            INNER JOIN team_user tu ON t.id = tu.team_id
+            WHERE tu.user_id IN ($ph)
+            AND t.id NOT LIKE 'CLA%'
+            AND LOWER(t.id)   != 'venezuela'
+            AND LOWER(t.name) != 'venezuela'
+            AND tu.deleted = 0
+            AND t.deleted  = 0"
+        );
+        $sth->execute($userIds);
+        return $sth->fetchAll(\PDO::FETCH_COLUMN);
+    }
+    
+    /**
+     * Devuelve IDs de usuarios que pertenecen al CLA (y opcionalmente a una oficina).
+     */
+    protected function resolverUserIdsDeCla($pdo, $claId, $oficinaId = null)
+    {
+        if (!$claId) return [];
+    
+        $sql    = "SELECT DISTINCT u.id
+                FROM user u
+                INNER JOIN team_user tu ON tu.user_id = u.id AND tu.team_id = ? AND tu.deleted = 0
+                WHERE u.deleted = 0";
+        $params = [$claId];
+    
+        if ($oficinaId) {
+            $sql    .= " AND EXISTS (
+                            SELECT 1 FROM team_user tu2
+                            WHERE tu2.user_id = u.id AND tu2.team_id = ? AND tu2.deleted = 0
+                        )";
+            $params[] = $oficinaId;
+        }
+    
+        $sth = $pdo->prepare($sql);
+        $sth->execute($params);
+        return $sth->fetchAll(\PDO::FETCH_COLUMN);
+    }
+    
+    /**
+     * Convierte el label del rango a una condición SQL y añade los binds necesarios.
+     * Devuelve la condición como string, o null si el rango no es reconocido.
+     */
+    protected function rangoACondicion($rango, $precioExpr, &$binds)
+    {
+        $rangos = [
+            '< 2500'        => ['min' => null,   'max' => 2500],
+            '2500-5000'     => ['min' => 2500,   'max' => 5000],
+            '5000-10000'    => ['min' => 5000,   'max' => 10000],
+            '10000-25000'   => ['min' => 10000,  'max' => 25000],
+            '25000-50000'   => ['min' => 25000,  'max' => 50000],
+            '50000-100000'  => ['min' => 50000,  'max' => 100000],
+            '100000-250000' => ['min' => 100000, 'max' => 250000],
+            '250000-500000' => ['min' => 250000, 'max' => 500000],
+            '> 500000'      => ['min' => 500000, 'max' => null],
+        ];
+    
+        if (!isset($rangos[$rango])) return null;
+    
+        $r = $rangos[$rango];
+    
+        if ($r['min'] === null) {
+            $binds[] = $r['max'];
+            return "($precioExpr) < ?";
+        }
+        if ($r['max'] === null) {
+            $binds[] = $r['min'];
+            return "($precioExpr) >= ?";
+        }
+        $binds[] = $r['min'];
+        $binds[] = $r['max'];
+        return "($precioExpr) >= ? AND ($precioExpr) < ?";
+    }
+    
+    /**
+     * Respuesta vacía con estructura correcta.
+     */
+    protected function respuestaVacia($pagina, $porPagina)
+    {
+        return [
+            'success'   => true,
+            'data'      => [],
+            'total'     => 0,
+            'pagina'    => $pagina,
+            'porPagina' => $porPagina,
+        ];
+    }
+    
+    /**
+     * Mapea valor BD → label legible para tipo_lado.
+     */
+    protected function labelTipoLado($valor)
+    {
+        $map = [
+            'obtencion' => 'Captador (Obtención)',
+            'cierre'    => 'Cerrador (Cierre)',
+        ];
+        return $map[$valor] ?? $valor;
+    }
+    
+    /**
+     * Mapea valor BD → label legible para tipo_operacion.
+     */
+    protected function labelTipoOperacion($valor)
+    {
+        $map = [
+            'renta' => 'Alquiler',
+            'Venta' => 'Venta',
+        ];
+        return $map[$valor] ?? $valor;
     }
 
     public function getActionGetSubtiposPorTipo($params, $data, $request)

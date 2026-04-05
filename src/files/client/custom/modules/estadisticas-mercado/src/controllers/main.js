@@ -8,34 +8,49 @@ define('estadisticas-mercado:controllers/main', ['controller'], function (Contro
             this.main('estadisticas-mercado:views/index');
         },
 
-        actionLadosPorTipoOperacion: function () {
-            this.main('estadisticas-mercado:views/reportes/lados-por-tipo-operacion');
+        // Cada acción de reporte recibe $params (query-string de la URL)
+        // y los pasa a la vista para poder restaurar filtros al volver del detalle.
+
+        actionLadosPorTipoOperacion: function ($params) {
+            this.main('estadisticas-mercado:views/reportes/lados-por-tipo-operacion', {
+                params: $params || {}
+            });
         },
 
-        actionRangoPrecios: function () {
-            this.main('estadisticas-mercado:views/reportes/rango-precios');
+        actionRangoPrecios: function ($params) {
+            this.main('estadisticas-mercado:views/reportes/rango-precios', {
+                params: $params || {}
+            });
         },
 
-        actionTiposLadoPorAsesor: function () {
-            this.main('estadisticas-mercado:views/reportes/tipos-lado-por-asesor');
+        actionTiposLadoPorAsesor: function ($params) {
+            this.main('estadisticas-mercado:views/reportes/tipos-lado-por-asesor', {
+                params: $params || {}
+            });
         },
 
-        actionTiposLadoPorOficina: function () {
-            this.main('estadisticas-mercado:views/reportes/tipos-lado-por-oficina');
+        actionTiposLadoPorOficina: function ($params) {
+            this.main('estadisticas-mercado:views/reportes/tipos-lado-por-oficina', {
+                params: $params || {}
+            });
         },
 
-        actionEstadisticasM2: function () {
-            this.main('estadisticas-mercado:views/reportes/estadisticas-m2');
+        actionEstadisticasM2: function ($params) {
+            this.main('estadisticas-mercado:views/reportes/estadisticas-m2', {
+                params: $params || {}
+            });
         },
 
-        actionEstadisticasM2Cla: function () {
-            this.main('estadisticas-mercado:views/reportes/estadisticas-m2-cla');
+        actionEstadisticasM2Cla: function ($params) {
+            this.main('estadisticas-mercado:views/reportes/estadisticas-m2-cla', {
+                params: $params || {}
+            });
         },
 
         actionPropiedadesDetalle: function ($params) {
-            // Los parámetros de la URL están en $params
-            var params = $params || {};
-            this.main('estadisticas-mercado:views/reportes/propiedades-detalle', { params: params });
+            this.main('estadisticas-mercado:views/reportes/propiedades-detalle', {
+                params: $params || {}
+            });
         }
 
     });
