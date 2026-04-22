@@ -1,20 +1,15 @@
 <link rel="stylesheet" type="text/css" href="client/custom/modules/estadisticas-mercado/res/css/estilos.css">
 
 <div class="em-page-header">
-    <div class="em-header-icon">
-        <i class="fas fa-building"></i>
-    </div>
+    <div class="em-header-icon"><i class="fas fa-building"></i></div>
     <div>
         <h2 class="em-page-title">Tipos de Lado por Oficina</h2>
-        <p class="em-page-sub">Conteo de lados por tipo (Captador/Cerrador) agrupados por oficina</p>
+        <p class="em-page-sub">Conteo de lados por tipo (Captador/Cerrador) agrupados por oficina · <em>Excluye Noviembre y Diciembre</em></p>
     </div>
 </div>
 
-<!-- Filtros -->
 <div class="em-filtros-card">
-    <div class="em-filtros-titulo">
-        <i class="fas fa-filter"></i> Filtros
-    </div>
+    <div class="em-filtros-titulo"><i class="fas fa-filter"></i> Filtros</div>
     <div class="em-filtros-grid">
 
         <div class="em-filtro-grupo">
@@ -24,15 +19,8 @@
             </select>
         </div>
 
-        <div class="em-filtro-grupo">
-            <label class="em-filtro-label">Fecha Inicio</label>
-            <input type="date" id="em-filtro-fecha-inicio" class="em-filtro-select">
-        </div>
-
-        <div class="em-filtro-grupo">
-            <label class="em-filtro-label">Fecha Fin</label>
-            <input type="date" id="em-filtro-fecha-fin" class="em-filtro-select">
-        </div>
+        <!-- PeriodoSelect inyecta aquí los dropdowns de Año(s) y Mes(es) -->
+        <div id="em-periodo-container" style="display:contents;"></div>
 
         <div class="em-filtros-acciones">
             <button class="em-btn em-btn-primary" data-action="buscar">
@@ -46,7 +34,6 @@
     </div>
 </div>
 
-<!-- Cabecera con acciones -->
 <div class="em-reporte-header">
     <h2><i class="fas fa-table" style="color:var(--color-primary);margin-right:8px;"></i>Resultados</h2>
     <div class="em-reporte-acciones">
@@ -59,7 +46,6 @@
     </div>
 </div>
 
-<!-- Contenido dinámico -->
 <div id="em-resultado-container">
     <div class="em-empty">
         <div class="em-empty-icon"><i class="fas fa-search"></i></div>

@@ -2,7 +2,7 @@
 
 <div class="em-page-header">
     <div class="em-header-icon">
-        <i class="fas fa-chart-line"></i>
+        <i class="fas fa-ruler-combined"></i>
     </div>
     <div>
         <h2 class="em-page-title">Estadísticas m² por CLA</h2>
@@ -16,8 +16,9 @@
         <i class="fas fa-filter"></i> Filtros
     </div>
 
-    <!-- Primera fila: CLA, Oficina, Fechas -->
+    <!-- Primera fila: CLA, Oficina, Año(s), Mes(es) -->
     <div class="em-filtros-grid em-filtros-row-primario">
+
         <div class="em-filtro-grupo">
             <label class="em-filtro-label">CLA</label>
             <select id="em-filtro-cla" class="em-filtro-select" required>
@@ -32,19 +33,14 @@
             </select>
         </div>
 
-        <div class="em-filtro-grupo">
-            <label class="em-filtro-label">Fecha Inicio</label>
-            <input type="date" id="em-filtro-fecha-inicio" class="em-filtro-select">
-        </div>
+        <!-- PeriodoSelect inyecta aquí los dropdowns de Año(s) y Mes(es) -->
+        <div id="em-periodo-container" style="display:contents;"></div>
 
-        <div class="em-filtro-grupo">
-            <label class="em-filtro-label">Fecha Fin</label>
-            <input type="date" id="em-filtro-fecha-fin" class="em-filtro-select">
-        </div>
     </div>
 
     <!-- Segunda fila: Tipo Operación, Tipo Propiedad, Subtipo -->
     <div class="em-filtros-grid em-filtros-row-secundario">
+
         <div class="em-filtro-grupo">
             <label class="em-filtro-label">Tipo Operación</label>
             <select id="em-filtro-tipo-operacion" class="em-filtro-select">
@@ -68,10 +64,11 @@
 
         <div class="em-filtro-grupo">
             <label class="em-filtro-label">Subtipo Propiedad</label>
-            <select id="em-filtro-subtipo" class="em-filtro-select" disabled>
+            <select id="em-filtro-subtipo" class="em-filtro-select">
                 <option value="">Todos</option>
             </select>
         </div>
+
     </div>
 
     <div class="em-filtros-acciones">

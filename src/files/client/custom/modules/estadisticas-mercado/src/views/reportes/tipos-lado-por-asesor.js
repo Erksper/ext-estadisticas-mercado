@@ -4,9 +4,10 @@ define(
     [
         'view',
         'estadisticas-mercado:views/modules/excel-export',
-        'estadisticas-mercado:views/modules/detalle-nav'
+        'estadisticas-mercado:views/modules/detalle-nav',
+        'estadisticas-mercado:views/modules/periodo-select'
     ],
-    function (View, ExcelExport, DetalleNav) {
+    function (View, ExcelExport, DetalleNav, PeriodoSelect) {
 
         return View.extend($.extend({}, DetalleNav, {
 
@@ -19,6 +20,7 @@ define(
             _hayDatos:         false,
             _chartInstance:    null,
             _filtrosActuales:  null,
+            _periodoSelect:    null,
 
             events: {
                 'click [data-action="buscar"]':   function () { this.buscar(); },
@@ -27,32 +29,35 @@ define(
                     this.getRouter().navigate('#EstadisticasMercado', { trigger: true });
                 },
                 'click [data-action="exportar"]': function () { this.exportar(); },
-                'change #em-filtro-cla': function () { this._cargarOficinasPorCLA(); },
+
+                // Al cambiar CLA recargamos oficinas Y años disponibles
+                'change #em-filtro-cla': function () {
+                    this._cargarOficinasPorCLA();
+                    if (this._periodoSelect) this._periodoSelect.reloadAnios();
+                },
 
                 // Clic en cabecera de columna (asesor)
                 'click .clickable-col': function (e) {
-                    var $th       = $(e.currentTarget);
-                    var asesorId  = $th.data('asesor-id');
-                    var asesorNom = $th.text().trim();
+                    var $th = $(e.currentTarget);
                     this._irADetalle({
                         reporte:       'ladosPorAsesor',
                         rutaReporte:   '#EstadisticasMercado/tiposLadoPorAsesor',
                         seleccion:     'columna',
-                        identificador: String(asesorId),
-                        titulo:        'Asesor: ' + asesorNom,
+                        identificador: String($th.data('asesor-id')),
+                        titulo:        'Asesor: ' + $th.text().trim(),
                         filtros:       this._filtrosActuales
                     });
                 },
 
                 // Clic en primera celda de fila (tipo de lado)
                 'click .clickable-row': function (e) {
-                    var tipoLado = $(e.currentTarget).text().trim();
+                    var tipo = $(e.currentTarget).text().trim();
                     this._irADetalle({
                         reporte:       'ladosPorAsesor',
                         rutaReporte:   '#EstadisticasMercado/tiposLadoPorAsesor',
                         seleccion:     'fila',
-                        identificador: tipoLado,
-                        titulo:        'Tipo de Lado: ' + tipoLado,
+                        identificador: tipo,
+                        titulo:        'Tipo de Lado: ' + tipo,
                         filtros:       this._filtrosActuales
                     });
                 }
@@ -65,55 +70,41 @@ define(
             afterRender: function () {
                 this._cargarChartJS();
                 this._cargarCLAs();
-                this._inicializarFechas();
+                this._iniciarPeriodoSelect();
                 this._restaurarFiltrosDesdeUrl();
             },
 
-            _restaurarFiltrosDesdeUrl: function () {
-                var p    = this._filtrosDesdeUrl;
-                var self = this;
-                var tieneFiltros = p && (p.claId || p.oficinaId || p.fechaInicio || p.fechaFin);
-                if (!tieneFiltros) return;
+            // ── PeriodoSelect ─────────────────────────────────────────────────
 
-                if (p.fechaInicio) this.$el.find('#em-filtro-fecha-inicio').val(p.fechaInicio);
-                if (p.fechaFin)    this.$el.find('#em-filtro-fecha-fin').val(p.fechaFin);
+            _iniciarPeriodoSelect: function () {
+                var self      = this;
+                var container = this.$el.find('#em-periodo-container')[0];
+                if (!container) return;
 
-                if (p.claId) {
-                    var intentos = 0;
-                    var esperar = setInterval(function () {
-                        var $sel = self.$el.find('#em-filtro-cla');
-                        if ($sel.find('option[value="' + p.claId + '"]').length || intentos > 30) {
-                            clearInterval(esperar);
-                            $sel.val(p.claId);
-                            // Cargar oficinas y luego buscar
-                            self._cargarOficinasPorCLA(p.oficinaId, function () {
-                                self.buscar();
-                            });
-                        }
-                        intentos++;
-                    }, 100);
-                } else if (p.oficinaId) {
-                    var intentosOf = 0;
-                    var esperarOf = setInterval(function () {
-                        var $sel = self.$el.find('#em-filtro-oficina');
-                        if ($sel.find('option[value="' + p.oficinaId + '"]').length || intentosOf > 30) {
-                            clearInterval(esperarOf);
-                            $sel.val(p.oficinaId);
-                            self.buscar();
-                        }
-                        intentosOf++;
-                    }, 100);
-                } else {
-                    this.buscar();
-                }
+                this._periodoSelect = new PeriodoSelect(container, {
+                    blockedMonths: [11, 12],
+                    getAnios: function (cb) {
+                        var claId = self.$el.find('#em-filtro-cla').val() || null;
+                        Espo.Ajax.getRequest('EstadisticasMercado/action/getAniosDisponibles', {
+                            reporte: 'ladosPorAsesor',
+                            claId:   claId
+                        }).then(function (r) {
+                            cb(r.success ? (r.data || []) : []);
+                        }).catch(function () { cb([]); });
+                    }
+                });
             },
+
+            // ── ChartJS ───────────────────────────────────────────────────────
 
             _cargarChartJS: function () {
                 if (typeof Chart !== 'undefined') return;
-                var script = document.createElement('script');
-                script.src = 'client/custom/modules/estadisticas-mercado/lib/chart.umd.min.js';
-                document.head.appendChild(script);
+                var s = document.createElement('script');
+                s.src = 'client/custom/modules/estadisticas-mercado/lib/chart.umd.min.js';
+                document.head.appendChild(s);
             },
+
+            // ── CLAs y Oficinas ───────────────────────────────────────────────
 
             _cargarCLAs: function () {
                 var self = this;
@@ -122,28 +113,28 @@ define(
                         if (!resp.success) return;
                         var $sel = self.$el.find('#em-filtro-cla');
                         $sel.empty().append('<option value="">Todos los CLAs</option>');
-                        (resp.data || []).forEach(function (cla) {
-                            $sel.append('<option value="' + cla.id + '">' + cla.name + '</option>');
+                        (resp.data || []).forEach(function (c) {
+                            $sel.append('<option value="' + c.id + '">' + c.name + '</option>');
                         });
                     });
             },
 
-            // Ahora acepta un callback opcional para encadenar con restauración de filtros
             _cargarOficinasPorCLA: function (preseleccionarId, callback) {
                 var claId = this.$el.find('#em-filtro-cla').val();
                 var $of   = this.$el.find('#em-filtro-oficina');
+
                 if (!claId) {
                     $of.html('<option value="">Todas las oficinas</option>').prop('disabled', false);
                     if (callback) callback();
                     return;
                 }
+
                 $of.prop('disabled', true).html('<option value="">Cargando...</option>');
-                var self = this;
                 Espo.Ajax.getRequest('EstadisticasMercado/action/getOficinasByCLA', { claId: claId })
                     .then(function (resp) {
                         var html = '<option value="">Todas las oficinas</option>';
-                        (resp.data || []).forEach(function (of) {
-                            html += '<option value="' + of.id + '">' + of.name + '</option>';
+                        (resp.data || []).forEach(function (o) {
+                            html += '<option value="' + o.id + '">' + o.name + '</option>';
                         });
                         $of.html(html).prop('disabled', false);
                         if (preseleccionarId) $of.val(preseleccionarId);
@@ -155,35 +146,49 @@ define(
                     });
             },
 
-            _inicializarFechas: function () {
-                var hoy    = new Date();
-                var fin    = hoy.toISOString().split('T')[0];
-                var inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 11, 1);
-                this.$el.find('#em-filtro-fecha-inicio').val(inicio.toISOString().split('T')[0]);
-                this.$el.find('#em-filtro-fecha-fin').val(fin);
+            // ── Restaurar desde URL ───────────────────────────────────────────
+
+            _restaurarFiltrosDesdeUrl: function () {
+                var p    = this._filtrosDesdeUrl;
+                var self = this;
+                if (!p || (!p.claId && !p.oficinaId && !p.anios && !p.meses)) return;
+
+                if (p.claId) {
+                    var intentos = 0;
+                    var esperar = setInterval(function () {
+                        var $sel = self.$el.find('#em-filtro-cla');
+                        if ($sel.find('option[value="' + p.claId + '"]').length || intentos > 30) {
+                            clearInterval(esperar);
+                            $sel.val(p.claId);
+                            self._cargarOficinasPorCLA(p.oficinaId, function () {
+                                self.buscar();
+                            });
+                        }
+                        intentos++;
+                    }, 100);
+                } else {
+                    this.buscar();
+                }
             },
 
-            buscar: function () {
-                var claId      = this.$el.find('#em-filtro-cla').val()          || null;
-                var oficinaId  = this.$el.find('#em-filtro-oficina').val()      || null;
-                var fechaInicio= this.$el.find('#em-filtro-fecha-inicio').val() || null;
-                var fechaFin   = this.$el.find('#em-filtro-fecha-fin').val()    || null;
+            // ── Búsqueda ──────────────────────────────────────────────────────
 
-                if (fechaInicio && fechaFin && fechaInicio > fechaFin) {
-                    Espo.Ui.error('La fecha de inicio no puede ser mayor a la fecha fin.');
-                    return;
-                }
+            buscar: function () {
+                var claId    = this.$el.find('#em-filtro-cla').val()     || null;
+                var ofId     = this.$el.find('#em-filtro-oficina').val() || null;
+                var anios    = this._periodoSelect ? this._periodoSelect.getAniosSeleccionados() : [];
+                var meses    = this._periodoSelect ? this._periodoSelect.getMesesSeleccionados() : [];
 
                 this._mostrarCargando();
+                this._filtrosActuales = { claId: claId, oficinaId: ofId, anios: anios, meses: meses };
 
                 var params = {};
-                if (claId)       params.claId      = claId;
-                if (oficinaId)   params.oficinaId   = oficinaId;
-                if (fechaInicio) params.fechaInicio  = fechaInicio;
-                if (fechaFin)    params.fechaFin     = fechaFin;
+                if (claId)        params.claId      = claId;
+                if (ofId)         params.oficinaId   = ofId;
+                if (anios.length) params.anios       = anios.join(',');
+                if (meses.length) params.meses       = meses.join(',');
 
-                this._filtrosActuales = { claId: claId, oficinaId: oficinaId,
-                                          fechaInicio: fechaInicio, fechaFin: fechaFin };
+                console.log('[TiposLadoPorAsesor] params →', JSON.stringify(params));
 
                 var self = this;
                 Espo.Ajax.getRequest('EstadisticasMercado/action/getLadosPorAsesor', params)
@@ -193,15 +198,15 @@ define(
                             self._mostrarVacio('Error al cargar datos.');
                             return;
                         }
-                        var asesoresRaw = resp.asesores || [];
-                        self._asesores  = Array.isArray(asesoresRaw)
-                            ? asesoresRaw : Object.values(asesoresRaw);
-                        self._filas             = resp.filas             || [];
-                        self._totalesPorAsesor  = resp.totalesPorAsesor  || {};
-                        self._totalGeneral      = resp.totalGeneral      || 0;
+                        var raw = resp.asesores || [];
+                        self._asesores         = Array.isArray(raw) ? raw : Object.values(raw);
+                        self._filas            = resp.filas            || [];
+                        self._totalesPorAsesor = resp.totalesPorAsesor || {};
+                        self._totalGeneral     = resp.totalGeneral     || 0;
 
-                        self._asesores = self._asesores.filter(function (as) {
-                            return (self._totalesPorAsesor[as.id] || 0) > 0;
+                        // Filtrar asesores sin lados en el período
+                        self._asesores = self._asesores.filter(function (a) {
+                            return (self._totalesPorAsesor[a.id] || 0) > 0;
                         });
 
                         self._hayDatos = true;
@@ -214,17 +219,21 @@ define(
                     });
             },
 
+            // ── Limpiar ───────────────────────────────────────────────────────
+
             limpiarFiltros: function () {
                 this.$el.find('#em-filtro-cla').val('');
                 this.$el.find('#em-filtro-oficina')
                     .html('<option value="">Todas las oficinas</option>').prop('disabled', true);
-                this._inicializarFechas();
-                this._hayDatos = false;
+                if (this._periodoSelect) this._periodoSelect.reset();
+                this._hayDatos        = false;
                 this._filtrosActuales = null;
                 this.$el.find('[data-action="exportar"]').prop('disabled', true);
                 if (this._chartInstance) { this._chartInstance.destroy(); this._chartInstance = null; }
                 this._mostrarEstadoInicial();
             },
+
+            // ── Render tabla ──────────────────────────────────────────────────
 
             _renderTabla: function () {
                 var self     = this;
@@ -236,44 +245,35 @@ define(
                     return;
                 }
 
-                var desc = this._descripcionPeriodo(
-                    this._filtrosActuales.claId,
-                    this._filtrosActuales.oficinaId,
-                    this._filtrosActuales.fechaInicio,
-                    this._filtrosActuales.fechaFin
-                );
-
+                var desc = this._descripcionPeriodo(this._filtrosActuales);
                 var html = '';
-                html += '<div class="em-info-band"><i class="fas fa-info-circle"></i>' +
-                        '<span>' + desc + '</span></div>';
+                html += '<div class="em-info-band"><i class="fas fa-info-circle"></i><span>' + desc + '</span></div>';
                 html += '<div class="em-tabla-wrapper"><div class="em-tabla-scroll">';
-                html += '<table class="em-tabla"><thead><tr>';
-                html += '<th>Tipo de Lado</th>';
-                asesores.forEach(function (as) {
-                    html += '<th class="clickable-col" data-asesor-id="' + self._esc(as.id) + '" ' +
-                            'title="Ver detalle de ' + self._esc(as.name) + '">' +
-                            self._esc(as.name) + '</th>';
+                html += '<table class="em-tabla"><thead><tr><th>Tipo de Lado</th>';
+
+                asesores.forEach(function (a) {
+                    html += '<th class="clickable-col" data-asesor-id="' + self._esc(a.id) +
+                            '" title="Ver detalle de ' + self._esc(a.name) + '">' +
+                            self._esc(a.name) + '</th>';
                 });
-                html += '<th class="col-total">Total</th>';
-                html += '</tr></thead><tbody>';
+                html += '<th class="col-total">Total</th></tr></thead><tbody>';
 
                 filas.forEach(function (fila) {
                     html += '<tr><td class="clickable-row" title="Ver detalle de ' +
                             self._esc(fila.tipo) + '">' + self._esc(fila.tipo) + '</td>';
-                    asesores.forEach(function (as) {
-                        html += '<td>' + (fila.conteos[as.id] || 0) + '</td>';
+                    asesores.forEach(function (a) {
+                        html += '<td>' + (fila.conteos[a.id] || 0) + '</td>';
                     });
                     html += '<td class="col-total">' + fila.total + '</td></tr>';
                 });
 
                 html += '</tbody><tfoot><tr><td><strong>Total</strong></td>';
-                asesores.forEach(function (as) {
-                    html += '<td><strong>' + (self._totalesPorAsesor[as.id] || 0) + '</strong></td>';
+                asesores.forEach(function (a) {
+                    html += '<td><strong>' + (self._totalesPorAsesor[a.id] || 0) + '</strong></td>';
                 });
                 html += '<td class="col-total"><strong>' + this._totalGeneral + '</strong></td>';
                 html += '</tr></tfoot></table></div></div>';
 
-                // Gráfico
                 html += '<div class="em-grafico-container">';
                 html += '<h3 style="margin-top:0;margin-bottom:16px;">' +
                         '<i class="fas fa-chart-bar"></i> Distribución por Asesor</h3>';
@@ -285,25 +285,28 @@ define(
                 setTimeout(function () { selfRef._renderGrafico(); }, 50);
             },
 
+            // ── Gráfico ───────────────────────────────────────────────────────
+
             _renderGrafico: function () {
                 if (typeof Chart === 'undefined') return;
                 if (this._chartInstance) this._chartInstance.destroy();
 
                 var asesores  = this._asesores;
                 var filas     = this._filas;
-                var labels    = asesores.map(function (as) { return as.name; });
+                var labels    = asesores.map(function (a) { return a.name; });
                 var captadores = [];
                 var cerradores = [];
 
-                asesores.forEach(function (as) {
+                asesores.forEach(function (a) {
                     var cf = filas.find(function (f) { return f.tipo === 'Captador (Obtención)'; });
                     var ef = filas.find(function (f) { return f.tipo === 'Cerrador (Cierre)'; });
-                    captadores.push(cf ? (cf.conteos[as.id] || 0) : 0);
-                    cerradores.push(ef ? (ef.conteos[as.id] || 0) : 0);
+                    captadores.push(cf ? (cf.conteos[a.id] || 0) : 0);
+                    cerradores.push(ef ? (ef.conteos[a.id] || 0) : 0);
                 });
 
                 var ctx = document.getElementById('em-grafico-canvas');
                 if (!ctx) return;
+
                 this._chartInstance = new Chart(ctx.getContext('2d'), {
                     type: 'bar',
                     data: {
@@ -326,75 +329,91 @@ define(
                 });
             },
 
+            // ── Exportar ──────────────────────────────────────────────────────
+
             exportar: function () {
                 if (!this._hayDatos) return;
                 var self    = this;
                 var headers = ['Tipo de Lado']
-                    .concat(this._asesores.map(function (as) { return as.name; }))
+                    .concat(this._asesores.map(function (a) { return a.name; }))
                     .concat(['Total']);
                 var filasExcel = this._filas.map(function (fila) {
                     var row = [fila.tipo];
-                    self._asesores.forEach(function (as) { row.push(fila.conteos[as.id] || 0); });
+                    self._asesores.forEach(function (a) { row.push(fila.conteos[a.id] || 0); });
                     row.push(fila.total);
                     return row;
                 });
-                var totalRow = ['Total'];
-                this._asesores.forEach(function (as) {
-                    totalRow.push(self._totalesPorAsesor[as.id] || 0);
+                var filaTotal = ['Total'];
+                this._asesores.forEach(function (a) {
+                    filaTotal.push(self._totalesPorAsesor[a.id] || 0);
                 });
-                totalRow.push(this._totalGeneral);
+                filaTotal.push(this._totalGeneral);
 
                 ExcelExport.exportar({
-                    nombreArchivo: 'tipos_lado_por_asesor_' +
-                                   (this._filtrosActuales.fechaInicio || '').replace(/-/g, '') + '_' +
-                                   (this._filtrosActuales.fechaFin    || '').replace(/-/g, ''),
-                    titulo: 'Tipos de Lado por Asesor',
-                    subtitulo: this._descripcionPeriodo(
-                        this._filtrosActuales.claId, this._filtrosActuales.oficinaId,
-                        this._filtrosActuales.fechaInicio, this._filtrosActuales.fechaFin),
-                    headers: headers, filas: filasExcel, filaTotal: totalRow
+                    nombreArchivo: 'tipos_lado_por_asesor',
+                    titulo:        'Tipos de Lado por Asesor',
+                    subtitulo:     this._descripcionPeriodo(this._filtrosActuales),
+                    headers:       headers,
+                    filas:         filasExcel,
+                    filaTotal:     filaTotal
                 });
+            },
+
+            // ── Helpers ───────────────────────────────────────────────────────
+
+            _descripcionPeriodo: function (f) {
+                if (!f) return '';
+                var partes = [];
+                if (f.claId) {
+                    var $opt = this.$el.find('#em-filtro-cla option[value="' + f.claId + '"]');
+                    partes.push('CLA: ' + ($opt.length ? $opt.text() : f.claId));
+                }
+                if (f.oficinaId) {
+                    var $optOf = this.$el.find('#em-filtro-oficina option[value="' + f.oficinaId + '"]');
+                    partes.push('Oficina: ' + ($optOf.length ? $optOf.text() : f.oficinaId));
+                }
+                if (f.anios && f.anios.length) {
+                    partes.push('Años: ' + f.anios.join(', '));
+                } else {
+                    partes.push('Todos los años');
+                }
+                if (f.meses && f.meses.length) {
+                    partes.push('Meses: ' + f.meses.join(', '));
+                } else {
+                    partes.push('Todos los meses');
+                }
+                partes.push('(Excluye Nov-Dic)');
+                return partes.join(' | ');
             },
 
             _mostrarCargando: function () {
                 this.$el.find('#em-resultado-container').html(
-                    '<div class="em-empty"><div class="em-spinner" style="margin-bottom:16px;"></div>' +
-                    '<h4>Cargando datos…</h4><p>Consultando la base de datos</p></div>');
+                    '<div class="em-empty">' +
+                    '<div class="em-spinner" style="margin-bottom:16px;"></div>' +
+                    '<h4>Cargando datos…</h4><p>Consultando la base de datos</p>' +
+                    '</div>');
             },
             _mostrarVacio: function (msg) {
                 this.$el.find('#em-resultado-container').html(
-                    '<div class="em-empty"><div class="em-empty-icon"><i class="fas fa-inbox"></i></div>' +
-                    '<h4>Sin resultados</h4><p>' + (msg || 'No hay datos.') + '</p></div>');
+                    '<div class="em-empty">' +
+                    '<div class="em-empty-icon"><i class="fas fa-inbox"></i></div>' +
+                    '<h4>Sin resultados</h4><p>' + (msg || 'No hay datos.') + '</p>' +
+                    '</div>');
                 this.$el.find('[data-action="exportar"]').prop('disabled', true);
             },
             _mostrarEstadoInicial: function () {
                 this.$el.find('#em-resultado-container').html(
-                    '<div class="em-empty"><div class="em-empty-icon"><i class="fas fa-search"></i></div>' +
+                    '<div class="em-empty">' +
+                    '<div class="em-empty-icon"><i class="fas fa-search"></i></div>' +
                     '<h4>Aplique los filtros para ver el reporte</h4>' +
-                    '<p>Seleccione los parámetros y presione <strong>Buscar</strong></p></div>');
+                    '<p>Seleccione los parámetros deseados y presione <strong>Buscar</strong></p>' +
+                    '</div>');
             },
-
-            _descripcionPeriodo: function (claId, oficinaId, fechaInicio, fechaFin) {
-                var partes = [];
-                if (fechaInicio && fechaFin) partes.push('Período: ' + fechaInicio + ' → ' + fechaFin);
-                else if (fechaInicio) partes.push('Desde: ' + fechaInicio);
-                else if (fechaFin)    partes.push('Hasta: ' + fechaFin);
-                else partes.push('Todos los períodos');
-                if (claId) {
-                    var $opt = this.$el.find('#em-filtro-cla option[value="' + claId + '"]');
-                    partes.push('CLA: ' + ($opt.length ? $opt.text() : claId));
-                }
-                if (oficinaId) {
-                    var $optOf = this.$el.find('#em-filtro-oficina option[value="' + oficinaId + '"]');
-                    partes.push('Oficina: ' + ($optOf.length ? $optOf.text() : oficinaId));
-                }
-                return partes.join(' | ');
-            },
-
             _esc: function (str) {
                 if (!str) return '';
-                return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-                                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                return String(str)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             }
         }));
     }
