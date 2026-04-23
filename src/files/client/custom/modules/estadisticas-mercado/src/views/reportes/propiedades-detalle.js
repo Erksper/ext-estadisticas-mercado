@@ -17,8 +17,7 @@ define(
             _total:          0,
             _data:           [],
             _cargando:       false,
-            _cargandoTodos:  false,   // flag para "seleccionar todos"
-            // Selección persistente entre páginas: { ladoId: filaObj, … }
+            _cargandoTodos:  false,
             _seleccionados:  {},
 
             // ── Eventos ───────────────────────────────────────────────────────
@@ -32,15 +31,12 @@ define(
                 'click [data-action="exportar"]': function () {
                     this._exportar();
                 },
-                // Checkbox "seleccionar página actual"
                 'change #chk-todos': function (e) {
                     this._toggleTodosEnPagina($(e.currentTarget).prop('checked'));
                 },
-                // Botón "Seleccionar todos (N registros)"
                 'click [data-action="seleccionar-todos"]': function () {
                     this._seleccionarTodosDelServidor();
                 },
-                // Checkbox individual de fila
                 'change .chk-fila': function (e) {
                     var $chk   = $(e.currentTarget);
                     var ladoId = String($chk.data('lado-id'));
@@ -79,16 +75,17 @@ define(
                     claId:            raw.claId            || null,
                     oficinaId:        raw.oficinaId        || null,
                     asesorId:         raw.asesorId         || null,
-                    fechaInicio:      raw.fechaInicio      || null,
-                    fechaFin:         raw.fechaFin         || null,
+                    anios:            raw.anios            || null,
+                    meses:            raw.meses            || null,
                     tipoOperacion:    raw.tipoOperacion    || null,
                     tipoPropiedad:    raw.tipoPropiedad    || null,
                     subtipoPropiedad: raw.subtipoPropiedad || null,
-                    ciudad:           raw.ciudad           || null
+                    ciudad:           raw.ciudad           || null,
+                    estado:           raw.estado           || null
                 };
 
-                this._seleccionados  = {};
-                this._cargandoTodos  = false;
+                this._seleccionados = {};
+                this._cargandoTodos = false;
             },
 
             // ── afterRender ───────────────────────────────────────────────────
@@ -128,6 +125,12 @@ define(
                             self._mostrarVacio('Error al cargar datos del servidor.');
                             return;
                         }
+
+                        // LOG de depuración: muestra las cláusulas WHERE y binds usados
+                        if (resp._debug) {
+                            console.log('[DetalleLados] _debug:', JSON.stringify(resp._debug, null, 2));
+                        }
+
                         self._data      = resp.data      || [];
                         self._total     = resp.total     || 0;
                         self._pagina    = resp.pagina    || self._pagina;
@@ -148,21 +151,19 @@ define(
                 this._cargarPagina();
             },
 
-            // ── Seleccionar TODOS del servidor (múltiples peticiones) ─────────
+            // ── Seleccionar TODOS del servidor ────────────────────────────────
             _seleccionarTodosDelServidor: function () {
                 if (this._cargandoTodos) return;
                 this._cargandoTodos = true;
 
-                var self       = this;
-                var totalPags  = Math.ceil(this._total / this._porPagina);
-                var promises   = [];
+                var self      = this;
+                var totalPags = Math.ceil(this._total / this._porPagina);
+                var promises  = [];
 
-                // Actualizar UI para indicar carga
                 this.$el.find('[data-action="seleccionar-todos"]')
                     .prop('disabled', true)
                     .html('<i class="fas fa-spinner fa-spin"></i> Cargando...');
 
-                // Construir params base (sin pagina/porPagina)
                 var baseParams = $.extend({}, this._params);
                 Object.keys(baseParams).forEach(function (k) {
                     if (baseParams[k] === null || baseParams[k] === undefined || baseParams[k] === '') {
@@ -170,7 +171,6 @@ define(
                     }
                 });
 
-                // Una petición por cada página que aún no tenemos completa
                 for (var p = 1; p <= totalPags; p++) {
                     var qp = $.extend({}, baseParams, {
                         pagina:    p,
@@ -189,7 +189,6 @@ define(
                                 });
                             }
                         });
-                        // Re-render para reflejar la selección total
                         self._renderTabla();
                         Espo.Ui.success('Se seleccionaron ' +
                             Object.keys(self._seleccionados).length + ' registros.');
@@ -214,9 +213,9 @@ define(
                     return;
                 }
 
-                var offsetFila     = (this._pagina - 1) * this._porPagina + 1;
-                var numSel         = Object.keys(this._seleccionados).length;
-                var todosMarcados  = numSel >= this._total && this._total > 0;
+                var offsetFila    = (this._pagina - 1) * this._porPagina + 1;
+                var numSel        = Object.keys(this._seleccionados).length;
+                var todosMarcados = numSel >= this._total && this._total > 0;
 
                 // ── Barra de selección ────────────────────────────────────────
                 var html = '';
@@ -226,7 +225,6 @@ define(
                         'border-left:4px solid #B8A279;border-radius:8px;' +
                         'padding:10px 16px;margin-bottom:14px;font-size:13px;color:#363438;">';
 
-                // Checkbox: seleccionar página
                 html += '<label style="display:flex;align-items:center;gap:6px;' +
                         'font-weight:600;cursor:pointer;user-select:none;margin:0;">' +
                         '<input type="checkbox" id="chk-todos" ' +
@@ -234,10 +232,8 @@ define(
                         (this._todosEnPaginaSeleccionados() ? 'checked' : '') +
                         '> Selec. página</label>';
 
-                // Separador visual
                 html += '<span style="color:#ddd;">|</span>';
 
-                // Botón: seleccionar todos del servidor
                 if (!todosMarcados) {
                     html += '<button data-action="seleccionar-todos" class="em-btn em-btn-primary" ' +
                             'style="padding:5px 12px;font-size:12px;"' +
@@ -248,19 +244,16 @@ define(
                                   this._total + ')') +
                             '</button>';
                 } else {
-                    // Ya están todos seleccionados: mostrar indicador
                     html += '<span style="color:#27ae60;font-weight:600;font-size:12px;">' +
                             '<i class="fas fa-check-circle"></i> Todos seleccionados</span>';
                 }
 
-                // Contador
                 html += '<span id="contador-sel" style="color:#B8A279;font-weight:700;">' +
                         (numSel > 0
                             ? numSel + ' seleccionado' + (numSel !== 1 ? 's' : '')
                             : 'Ninguno seleccionado') +
                         '</span>';
 
-                // Botón limpiar + info exportación
                 if (numSel > 0) {
                     html += '<button data-action="limpiar-seleccion" class="em-btn em-btn-secondary" ' +
                             'style="padding:5px 12px;font-size:12px;">' +
@@ -289,6 +282,7 @@ define(
                 html += '<th>Asesor</th>';
                 html += '<th>Tipo Propiedad</th>';
                 html += '<th>Subtipo</th>';
+                html += '<th>Fecha Cierre</th>';    // ← NUEVA columna
                 html += '<th>Precio Inicial</th>';
                 html += '<th>Precio Cierre</th>';
                 html += '<th>Área m²</th>';
@@ -318,6 +312,7 @@ define(
                     html += '<td>' + self._esc(r.asesor_nombre)      + '</td>';
                     html += '<td>' + self._esc(r.tipo_propiedad)     + '</td>';
                     html += '<td>' + self._esc(r.sub_tipo_propiedad) + '</td>';
+                    html += '<td>' + self._esc(r.fecha_cierre || '-') + '</td>';  // ← NUEVA celda
                     html += '<td>' + self._precio(r.precio_inicial)  + '</td>';
                     html += '<td>' + self._precio(r.precio_cierre)   + '</td>';
                     html += '<td>' + self._m2(r.area_construccion)   + '</td>';
@@ -441,6 +436,7 @@ define(
                 var headers = [
                     '#', 'ID Propiedad', 'Dirección', 'Tipo de Lado', 'Tipo Operación',
                     'Oficina', 'Asesor', 'Tipo Propiedad', 'Subtipo',
+                    'Fecha Cierre',                               // ← NUEVA columna
                     'Precio Inicial', 'Precio Cierre', 'Área m²', 'Precio / m²'
                 ];
 
@@ -451,15 +447,14 @@ define(
                         r.tipo_lado,         r.tipo_operacion,
                         r.oficina_nombre,    r.asesor_nombre,
                         r.tipo_propiedad,    r.sub_tipo_propiedad,
+                        r.fecha_cierre || '',                     // ← NUEVA celda
                         r.precio_inicial,    r.precio_cierre,
                         r.area_construccion, r.precio_por_m2
                     ];
                 });
 
                 ExcelExport.exportar({
-                    nombreArchivo: 'detalle_propiedades_' +
-                                   (this._params.fechaInicio || '') + '_' +
-                                   (this._params.fechaFin    || ''),
+                    nombreArchivo: 'detalle_propiedades',
                     titulo:    'Detalle de Propiedades',
                     subtitulo: this._titulo +
                                (numSel > 0

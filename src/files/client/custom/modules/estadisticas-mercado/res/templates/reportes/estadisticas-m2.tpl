@@ -16,34 +16,33 @@
         <i class="fas fa-filter"></i> Filtros
     </div>
 
-    <!-- Primera fila: Ciudad y fechas -->
+    <!-- Primera fila: Estado, Ciudad, Año(s), Mes(es) -->
     <div class="em-filtros-grid em-filtros-row-primario">
+
+        <div class="em-filtro-grupo">
+            <label class="em-filtro-label">Estado</label>
+            <div id="em-filtro-estado-container"></div>
+        </div>
+
         <div class="em-filtro-grupo">
             <label class="em-filtro-label">Ciudad</label>
-            <select id="em-filtro-ciudad" class="em-filtro-select" required>
-                <option value="">Seleccione una ciudad</option>
-            </select>
+            <div id="em-filtro-ciudad-container"></div>
         </div>
 
-        <div class="em-filtro-grupo">
-            <label class="em-filtro-label">Fecha Inicio</label>
-            <input type="date" id="em-filtro-fecha-inicio" class="em-filtro-select">
-        </div>
+        <!-- PeriodoSelect inyecta aquí los dropdowns de Año(s) y Mes(es) -->
+        <div id="em-periodo-container" style="display:contents;"></div>
 
-        <div class="em-filtro-grupo">
-            <label class="em-filtro-label">Fecha Fin</label>
-            <input type="date" id="em-filtro-fecha-fin" class="em-filtro-select">
-        </div>
     </div>
 
     <!-- Segunda fila: Tipo operación, tipo propiedad, subtipo -->
     <div class="em-filtros-grid em-filtros-row-secundario">
+
         <div class="em-filtro-grupo">
             <label class="em-filtro-label">Tipo Operación</label>
             <select id="em-filtro-tipo-operacion" class="em-filtro-select">
                 <option value="">Todos</option>
                 <option value="Venta">Venta</option>
-                <option value="renta">Alquiler</option>   <!-- valor 'renta' en BD, pero se muestra 'Alquiler' -->
+                <option value="renta">Alquiler</option>
             </select>
         </div>
 
@@ -61,10 +60,11 @@
 
         <div class="em-filtro-grupo">
             <label class="em-filtro-label">Subtipo Propiedad</label>
-            <select id="em-filtro-subtipo" class="em-filtro-select" disabled>
+            <select id="em-filtro-subtipo" class="em-filtro-select">
                 <option value="">Todos</option>
             </select>
         </div>
+
     </div>
 
     <div class="em-filtros-acciones">
