@@ -8,7 +8,6 @@ define(
 
             template: 'estadisticas-mercado:reportes/propiedades-detalle',
 
-            // ── Estado interno ────────────────────────────────────────────────
             _params:         null,
             _titulo:         '',
             _retornoUrl:     null,
@@ -20,7 +19,18 @@ define(
             _cargandoTodos:  false,
             _seleccionados:  {},
 
-            // ── Eventos ───────────────────────────────────────────────────────
+            // Helper para transformar etiquetas visualmente
+            _transformarEtiqueta: function(texto) {
+                if (!texto) return texto;
+                var map = {
+                    'Renta': 'Alquiler',
+                    'renta': 'Alquiler',
+                    'Habitacional': 'Residencial',
+                    'Departamento': 'Apartamento'
+                };
+                return map[texto] || texto;
+            },
+
             events: {
                 'click [data-action="volver"]': function () {
                     this.getRouter().navigate(
@@ -59,7 +69,6 @@ define(
                 }
             },
 
-            // ── Setup ─────────────────────────────────────────────────────────
             setup: function () {
                 var raw = this.options.params || {};
 
@@ -88,13 +97,11 @@ define(
                 this._cargandoTodos = false;
             },
 
-            // ── afterRender ───────────────────────────────────────────────────
             afterRender: function () {
                 this.$el.find('#detalle-subtitulo').text(this._titulo);
                 this._cargarPagina();
             },
 
-            // ── Carga de datos ────────────────────────────────────────────────
             _cargarPagina: function () {
                 if (this._cargando) return;
                 this._cargando = true;
@@ -126,7 +133,6 @@ define(
                             return;
                         }
 
-                        // LOG de depuración: muestra las cláusulas WHERE y binds usados
                         if (resp._debug) {
                             console.log('[DetalleLados] _debug:', JSON.stringify(resp._debug, null, 2));
                         }
@@ -151,7 +157,6 @@ define(
                 this._cargarPagina();
             },
 
-            // ── Seleccionar TODOS del servidor ────────────────────────────────
             _seleccionarTodosDelServidor: function () {
                 if (this._cargandoTodos) return;
                 this._cargandoTodos = true;
@@ -203,7 +208,6 @@ define(
                     });
             },
 
-            // ── Render principal ──────────────────────────────────────────────
             _renderTabla: function () {
                 var self      = this;
                 var container = this.$el.find('#detalle-container');
@@ -217,7 +221,7 @@ define(
                 var numSel        = Object.keys(this._seleccionados).length;
                 var todosMarcados = numSel >= this._total && this._total > 0;
 
-                // ── Barra de selección ────────────────────────────────────────
+                // Barra de selección
                 var html = '';
                 html += '<div id="barra-seleccion" style="' +
                         'display:flex;align-items:center;gap:12px;flex-wrap:wrap;' +
@@ -268,7 +272,7 @@ define(
 
                 html += '</div>';
 
-                // ── Tabla ─────────────────────────────────────────────────────
+                // Tabla
                 html += '<div class="em-tabla-wrapper"><div class="em-tabla-scroll">';
                 html += '<table class="em-tabla"><thead><tr>';
                 html += '<th style="width:44px;text-align:center;">#</th>';
@@ -282,7 +286,7 @@ define(
                 html += '<th>Asesor</th>';
                 html += '<th>Tipo Propiedad</th>';
                 html += '<th>Subtipo</th>';
-                html += '<th>Fecha Cierre</th>';    // ← NUEVA columna
+                html += '<th>Fecha Cierre</th>';
                 html += '<th>Precio Inicial</th>';
                 html += '<th>Precio Cierre</th>';
                 html += '<th>Área m²</th>';
@@ -307,12 +311,12 @@ define(
                     html += '<td>' + self._esc(r.propiedad_id)       + '</td>';
                     html += '<td>' + self._esc(r.direccion)          + '</td>';
                     html += '<td>' + self._esc(r.tipo_lado)          + '</td>';
-                    html += '<td>' + self._esc(r.tipo_operacion)     + '</td>';
+                    html += '<td>' + self._esc(self._transformarEtiqueta(r.tipo_operacion))     + '</td>';
                     html += '<td>' + self._esc(r.oficina_nombre)     + '</td>';
                     html += '<td>' + self._esc(r.asesor_nombre)      + '</td>';
-                    html += '<td>' + self._esc(r.tipo_propiedad)     + '</td>';
-                    html += '<td>' + self._esc(r.sub_tipo_propiedad) + '</td>';
-                    html += '<td>' + self._esc(r.fecha_cierre || '-') + '</td>';  // ← NUEVA celda
+                    html += '<td>' + self._esc(self._transformarEtiqueta(r.tipo_propiedad))     + '</td>';
+                    html += '<td>' + self._esc(self._transformarEtiqueta(r.sub_tipo_propiedad)) + '</td>';
+                    html += '<td>' + self._esc(r.fecha_cierre || '-') + '</td>';
                     html += '<td>' + self._precio(r.precio_inicial)  + '</td>';
                     html += '<td>' + self._precio(r.precio_cierre)   + '</td>';
                     html += '<td>' + self._m2(r.area_construccion)   + '</td>';
@@ -327,7 +331,6 @@ define(
                 this.$el.find('[data-action="exportar"]').prop('disabled', false);
             },
 
-            // ── Helpers de selección ──────────────────────────────────────────
             _todosEnPaginaSeleccionados: function () {
                 if (!this._data.length) return false;
                 return this._data.every(function (r) {
@@ -374,7 +377,6 @@ define(
                 );
             },
 
-            // ── Paginación ────────────────────────────────────────────────────
             _renderPaginacion: function () {
                 var totalPaginas = Math.ceil(this._total / this._porPagina);
                 if (totalPaginas <= 1) return '';
@@ -424,7 +426,6 @@ define(
                 return html;
             },
 
-            // ── Exportar ──────────────────────────────────────────────────────
             _exportar: function () {
                 var numSel = Object.keys(this._seleccionados).length;
                 var fuente = numSel > 0
@@ -436,18 +437,19 @@ define(
                 var headers = [
                     '#', 'ID Propiedad', 'Dirección', 'Tipo de Lado', 'Tipo Operación',
                     'Oficina', 'Asesor', 'Tipo Propiedad', 'Subtipo',
-                    'Fecha Cierre',                               // ← NUEVA columna
-                    'Precio Inicial', 'Precio Cierre', 'Área m²', 'Precio / m²'
+                    'Fecha Cierre', 'Precio Inicial', 'Precio Cierre', 'Área m²', 'Precio / m²'
                 ];
 
+                var self = this;
                 var filas = fuente.map(function (r, idx) {
                     return [
                         idx + 1,
                         r.propiedad_id,      r.direccion,
-                        r.tipo_lado,         r.tipo_operacion,
+                        r.tipo_lado,         self._transformarEtiqueta(r.tipo_operacion),
                         r.oficina_nombre,    r.asesor_nombre,
-                        r.tipo_propiedad,    r.sub_tipo_propiedad,
-                        r.fecha_cierre || '',                     // ← NUEVA celda
+                        self._transformarEtiqueta(r.tipo_propiedad),
+                        self._transformarEtiqueta(r.sub_tipo_propiedad),
+                        r.fecha_cierre || '',
                         r.precio_inicial,    r.precio_cierre,
                         r.area_construccion, r.precio_por_m2
                     ];
@@ -466,7 +468,6 @@ define(
                 });
             },
 
-            // ── Estados UI ─────────────────────────────────────────────────────
             _mostrarVacio: function (msg) {
                 this.$el.find('#detalle-container').html(
                     '<div class="em-empty">' +
@@ -478,7 +479,6 @@ define(
                 this.$el.find('[data-action="exportar"]').prop('disabled', true);
             },
 
-            // ── Utilidades ─────────────────────────────────────────────────────
             _esc: function (str) {
                 if (!str) return '';
                 return String(str)

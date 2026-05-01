@@ -22,6 +22,10 @@ define(
             _filtrosActuales:  null,
             _periodoSelect:    null,
 
+            // ── Paginación del gráfico ─────────────────────────────────────────
+            _graficoPagina:    0,          // página actual (base 0)
+            _graficoPorPagina: 15,         // asesores visibles por página
+
             events: {
                 'click [data-action="buscar"]':   function () { this.buscar(); },
                 'click [data-action="limpiar"]':  function () { this.limpiarFiltros(); },
@@ -209,6 +213,7 @@ define(
                             return (self._totalesPorAsesor[a.id] || 0) > 0;
                         });
 
+                        self._graficoPagina = 0;   // siempre volver a página 1 al buscar
                         self._hayDatos = true;
                         self._renderTabla();
                         self.$el.find('[data-action="exportar"]').prop('disabled', false);
@@ -285,24 +290,122 @@ define(
                 setTimeout(function () { selfRef._renderGrafico(); }, 50);
             },
 
-            // ── Gráfico ───────────────────────────────────────────────────────
+            // ── Gráfico (con paginación, orden desc por total) ────────────────
 
             _renderGrafico: function () {
                 if (typeof Chart === 'undefined') return;
-                if (this._chartInstance) this._chartInstance.destroy();
 
-                var asesores  = this._asesores;
-                var filas     = this._filas;
-                var labels    = asesores.map(function (a) { return a.name; });
+                var self  = this;
+                var filas = this._filas;
+
+                // Ordenar asesores de mayor a menor por total de lados
+                var asesorOrdenado = this._asesores.slice().sort(function (a, b) {
+                    return (self._totalesPorAsesor[b.id] || 0) - (self._totalesPorAsesor[a.id] || 0);
+                });
+
+                var total      = asesorOrdenado.length;
+                var porPagina  = this._graficoPorPagina;
+                var totalPags  = Math.ceil(total / porPagina) || 1;
+
+                // Escala global: máximo valor INDIVIDUAL de cualquier barra (no suma),
+                // redondeado a la decena superior más próxima
+                var cfila = filas.find(function (f) { return f.tipo === 'Captador (Obtención)'; });
+                var efila = filas.find(function (f) { return f.tipo === 'Cerrador (Cierre)'; });
+                var maxGlobal = 0;
+                asesorOrdenado.forEach(function (a) {
+                    var cap = cfila ? (cfila.conteos[a.id] || 0) : 0;
+                    var cer = efila ? (efila.conteos[a.id] || 0) : 0;
+                    if (cap > maxGlobal) maxGlobal = cap;
+                    if (cer > maxGlobal) maxGlobal = cer;
+                });
+                // Decena superior: 23 → 30, 25 → 30, 30 → 30, 31 → 40
+                var escalaMax = maxGlobal === 0 ? 10 : Math.ceil(maxGlobal / 10) * 10;
+
+                // Clampear página actual en caso de que haya cambiado el dataset
+                if (this._graficoPagina >= totalPags) this._graficoPagina = 0;
+
+                var inicio  = this._graficoPagina * porPagina;
+                var slice   = asesorOrdenado.slice(inicio, inicio + porPagina);
+
+                var labels     = slice.map(function (a) { return a.name; });
                 var captadores = [];
                 var cerradores = [];
 
-                asesores.forEach(function (a) {
-                    var cf = filas.find(function (f) { return f.tipo === 'Captador (Obtención)'; });
-                    var ef = filas.find(function (f) { return f.tipo === 'Cerrador (Cierre)'; });
-                    captadores.push(cf ? (cf.conteos[a.id] || 0) : 0);
-                    cerradores.push(ef ? (ef.conteos[a.id] || 0) : 0);
+                slice.forEach(function (a) {
+                    captadores.push(cfila ? (cfila.conteos[a.id] || 0) : 0);
+                    cerradores.push(efila ? (efila.conteos[a.id] || 0) : 0);
                 });
+
+                // Rellenar con filas vacías para que la última página tenga el mismo
+                // número de barras que las demás y no se vean gigantes
+                var faltantes = porPagina - slice.length;
+                for (var i = 0; i < faltantes; i++) {
+                    labels.push('');       // label vacío → barra fantasma sin texto
+                    captadores.push(null); // null → Chart.js no dibuja barra
+                    cerradores.push(null);
+                }
+
+                // ── Controles de paginación ───────────────────────────────────
+                var $wrapper = this.$el.find('.em-grafico-container');
+
+                // Altura FIJA basada en porPagina (no en slice.length),
+                // así las barras siempre tienen el mismo grosor en todas las páginas
+                var alturaCanvas = Math.max(300, porPagina * 36);
+
+                // Limpiar canvas y controles previos
+                $wrapper.find('#em-grafico-canvas').remove();
+                $wrapper.find('.em-grafico-paginacion').remove();
+
+                // Nuevo canvas con altura apropiada
+                var $canvas = $('<canvas id="em-grafico-canvas"></canvas>').css({
+                    width: '100%',
+                    height: alturaCanvas + 'px'
+                });
+                $wrapper.append($canvas);
+
+                // Controles de navegación (solo si hay más de una página)
+                if (totalPags > 1) {
+                    var desde  = inicio + 1;
+                    var hasta  = Math.min(inicio + porPagina, total);
+                    var $pag   = $('<div class="em-grafico-paginacion"></div>').css({
+                        display:        'flex',
+                        alignItems:     'center',
+                        justifyContent: 'center',
+                        gap:            '10px',
+                        marginTop:      '12px',
+                        fontSize:       '13px'
+                    });
+
+                    var btnEstilo = 'border:1.5px solid var(--color-primary);' +
+                                   'background:#fff;color:var(--color-primary);' +
+                                   'border-radius:6px;padding:5px 14px;' +
+                                   'cursor:pointer;font-size:13px;transition:all 0.15s;';
+
+                    var $prev = $('<button type="button">&#8249; Anterior</button>').attr('style', btnEstilo);
+                    var $next = $('<button type="button">Siguiente &#8250;</button>').attr('style', btnEstilo);
+                    var $info = $('<span></span>').text(
+                        'Mostrando ' + desde + '–' + hasta + ' de ' + total + ' asesores' +
+                        '  (página ' + (this._graficoPagina + 1) + ' de ' + totalPags + ')'
+                    ).css({ color: '#666' });
+
+                    if (this._graficoPagina === 0)             $prev.prop('disabled', true).css('opacity', '0.4');
+                    if (this._graficoPagina >= totalPags - 1)  $next.prop('disabled', true).css('opacity', '0.4');
+
+                    $prev.on('click', function () {
+                        self._graficoPagina--;
+                        self._renderGrafico();
+                    });
+                    $next.on('click', function () {
+                        self._graficoPagina++;
+                        self._renderGrafico();
+                    });
+
+                    $pag.append($prev, $info, $next);
+                    $wrapper.append($pag);
+                }
+
+                // ── Dibujar chart ─────────────────────────────────────────────
+                if (this._chartInstance) this._chartInstance.destroy();
 
                 var ctx = document.getElementById('em-grafico-canvas');
                 if (!ctx) return;
@@ -319,10 +422,12 @@ define(
                         ]
                     },
                     options: {
-                        responsive: true, maintainAspectRatio: true, indexAxis: 'y',
+                        responsive:          true,
+                        maintainAspectRatio: false,
+                        indexAxis:           'y',
                         plugins: { legend: { position: 'top' } },
                         scales: {
-                            x: { title: { display: true, text: 'Cantidad de lados' } },
+                            x: { title: { display: true, text: 'Cantidad de lados' }, beginAtZero: true, max: escalaMax },
                             y: { title: { display: true, text: 'Asesor' } }
                         }
                     }

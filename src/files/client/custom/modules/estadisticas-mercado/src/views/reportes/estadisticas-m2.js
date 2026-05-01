@@ -22,6 +22,18 @@ define(
             _ssEstado:        null,
             _ssCiudad:        null,
 
+            // --- HELPER para transformar etiquetas visualmente ---
+            _transformarEtiqueta: function(texto) {
+                if (!texto) return texto;
+                var map = {
+                    'Renta': 'Alquiler',
+                    'renta': 'Alquiler',
+                    'Habitacional': 'Residencial',
+                    'Departamento': 'Apartamento'
+                };
+                return map[texto] || texto;
+            },
+
             events: {
                 'click [data-action="buscar"]':     function () { this.buscar(); },
                 'click [data-action="limpiar"]':    function () { this.limpiarFiltros(); },
@@ -30,13 +42,10 @@ define(
                 },
                 'click [data-action="exportar"]':   function () { this.exportar(); },
 
-                // Al cambiar tipo propiedad: recargar subtipos
-                // Si tipo vacío → carga TODOS los subtipos
                 'change #em-filtro-tipo-propiedad': function () {
                     this._cargarSubtipos();
                 },
 
-                // Solo filas clickeables (por urbanización)
                 'click .clickable-row': function (e) {
                     var urb = $(e.currentTarget).text().trim();
                     this._irADetalle({
@@ -58,12 +67,9 @@ define(
                 this._iniciarSearchables();
                 this._iniciarPeriodoSelect();
                 this._cargarEstados();
-                // Cargar todos los subtipos al inicio (tipo vacío = todos)
                 this._cargarSubtipos();
                 this._restaurarFiltrosDesdeUrl();
             },
-
-            // ── SearchableSelect para Estado y Ciudad ─────────────────────────
 
             _iniciarSearchables: function () {
                 var self = this;
@@ -72,31 +78,25 @@ define(
                 var contCiudad = this.$el.find('#em-filtro-ciudad-container')[0];
                 if (!contEstado || !contCiudad) return;
 
-                // Estado
                 this._ssEstado = new SearchableSelect(contEstado, {
                     placeholder: 'Estado…',
                     emptyLabel:  'Todos los estados',
                     items:       [],
                     onChange: function (val) {
-                        // Al cambiar estado: recargar ciudades y años
                         self._cargarCiudadesPorEstado(val);
                         if (self._periodoSelect) self._periodoSelect.reloadAnios();
                     }
                 });
 
-                // Ciudad
                 this._ssCiudad = new SearchableSelect(contCiudad, {
                     placeholder: 'Ciudad…',
                     emptyLabel:  'Todas las ciudades',
                     items:       [],
                     onChange: function () {
-                        // Al cambiar ciudad recargar años
                         if (self._periodoSelect) self._periodoSelect.reloadAnios();
                     }
                 });
             },
-
-            // ── PeriodoSelect ─────────────────────────────────────────────────
 
             _iniciarPeriodoSelect: function () {
                 var self      = this;
@@ -104,7 +104,7 @@ define(
                 if (!container) return;
 
                 this._periodoSelect = new PeriodoSelect(container, {
-                    blockedMonths: [],   // m² NO excluye nov/dic
+                    blockedMonths: [],
                     getAnios: function (cb) {
                         var ciudad = self._ssCiudad ? self._ssCiudad.getValue() : '';
                         Espo.Ajax.getRequest('EstadisticasMercado/action/getAniosDisponibles', {
@@ -117,8 +117,6 @@ define(
                 });
             },
 
-            // ── Carga de Estados ──────────────────────────────────────────────
-
             _cargarEstados: function () {
                 var self = this;
                 Espo.Ajax.getRequest('EstadisticasMercado/action/getEstados')
@@ -128,12 +126,9 @@ define(
                             return { value: e, label: e };
                         });
                         self._ssEstado.setItems(items);
-                        // Cargar todas las ciudades inicialmente (sin filtro de estado)
                         self._cargarCiudadesPorEstado('');
                     });
             },
-
-            // ── Carga de Ciudades (filtradas por estado) ──────────────────────
 
             _cargarCiudadesPorEstado: function (estadoVal) {
                 var self = this;
@@ -158,10 +153,7 @@ define(
                     });
             },
 
-            // ── Subtipos (siempre habilitado) ─────────────────────────────────
-            // Si tipo vacío → devuelve TODOS los subtipos.
-            // Si hay tipo → filtra por ese tipo.
-
+            // --- Subtipos con transformación de etiqueta ---
             _cargarSubtipos: function (preseleccionarVal, callback) {
                 var tipo     = this.$el.find('#em-filtro-tipo-propiedad').val();
                 var $subtipo = this.$el.find('#em-filtro-subtipo');
@@ -176,7 +168,8 @@ define(
                     .then(function (resp) {
                         var html = '<option value="">Todos</option>';
                         (resp.data || []).forEach(function (s) {
-                            html += '<option value="' + self._esc(s) + '">' + self._esc(s) + '</option>';
+                            var textoMostrar = self._transformarEtiqueta(s);
+                            html += '<option value="' + self._esc(s) + '">' + self._esc(textoMostrar) + '</option>';
                         });
                         $subtipo.html(html).prop('disabled', false);
                         if (preseleccionarVal) $subtipo.val(preseleccionarVal);
@@ -187,8 +180,6 @@ define(
                         if (callback) callback();
                     });
             },
-
-            // ── Restaurar filtros desde URL ───────────────────────────────────
 
             _restaurarFiltrosDesdeUrl: function () {
                 var p    = this._filtrosDesdeUrl;
@@ -208,14 +199,12 @@ define(
                     }
                 };
 
-                // Restaurar estado → esperar a que ssEstado tenga items
                 if (p.estado) {
                     var intentosE = 0;
                     var esperarE = setInterval(function () {
                         if ((self._ssEstado && self._ssEstado._items.length > 0) || intentosE > 30) {
                             clearInterval(esperarE);
                             self._ssEstado.setValue(p.estado);
-                            // Cargar ciudades del estado y luego ciudad
                             self._cargarCiudadesPorEstado(p.estado);
                             setTimeout(function () {
                                 if (p.ciudad && self._ssCiudad) {
@@ -227,7 +216,6 @@ define(
                         intentosE++;
                     }, 100);
                 } else if (p.ciudad) {
-                    // Sin estado pero con ciudad: esperar ciudades
                     var intentosC = 0;
                     var esperarC = setInterval(function () {
                         if ((self._ssCiudad && self._ssCiudad._items.length > 0) || intentosC > 30) {
@@ -241,8 +229,6 @@ define(
                     buscarFn();
                 }
             },
-
-            // ── Búsqueda ──────────────────────────────────────────────────────
 
             buscar: function () {
                 var estado  = this._ssEstado  ? this._ssEstado.getValue()  : '';
@@ -300,24 +286,18 @@ define(
                     });
             },
 
-            // ── Limpiar ───────────────────────────────────────────────────────
-
             limpiarFiltros: function () {
                 if (this._ssEstado) this._ssEstado.reset();
-                // Recargar todas las ciudades al limpiar estado
                 this._cargarCiudadesPorEstado('');
                 if (this._periodoSelect) this._periodoSelect.reset();
                 this.$el.find('#em-filtro-tipo-operacion').val('');
                 this.$el.find('#em-filtro-tipo-propiedad').val('');
-                // Recargar subtipos con tipo vacío → todos
                 this._cargarSubtipos();
                 this._hayDatos        = false;
                 this._filtrosActuales = null;
                 this.$el.find('[data-action="exportar"]').prop('disabled', true);
                 this._mostrarEstadoInicial();
             },
-
-            // ── Render tabla ──────────────────────────────────────────────────
 
             _renderTabla: function () {
                 var self  = this;
@@ -365,8 +345,6 @@ define(
                 this.$el.find('#em-resultado-container').html(html);
             },
 
-            // ── Exportar ──────────────────────────────────────────────────────
-
             exportar: function () {
                 if (!this._hayDatos) return;
                 var self    = this;
@@ -397,10 +375,10 @@ define(
                 });
             },
 
-            // ── Helpers ───────────────────────────────────────────────────────
-
+            // --- Descripción con transformación de etiquetas ---
             _descripcionPeriodo: function (f) {
                 if (!f) return '';
+                var self = this;
                 var partes = [];
                 if (f.estado)  partes.push('Estado: '  + f.estado);
                 if (f.ciudad)  partes.push('Ciudad: '  + f.ciudad);
@@ -414,9 +392,9 @@ define(
                 } else {
                     partes.push('Todos los meses');
                 }
-                if (f.tipoOperacion)    partes.push('Tipo Op.: '   + f.tipoOperacion);
-                if (f.tipoPropiedad)    partes.push('Tipo Prop.: '  + f.tipoPropiedad);
-                if (f.subtipoPropiedad) partes.push('Subtipo: '     + f.subtipoPropiedad);
+                if (f.tipoOperacion)    partes.push('Tipo Op.: '   + self._transformarEtiqueta(f.tipoOperacion));
+                if (f.tipoPropiedad)    partes.push('Tipo Prop.: '  + self._transformarEtiqueta(f.tipoPropiedad));
+                if (f.subtipoPropiedad) partes.push('Subtipo: '     + self._transformarEtiqueta(f.subtipoPropiedad));
                 return partes.join(' | ');
             },
 

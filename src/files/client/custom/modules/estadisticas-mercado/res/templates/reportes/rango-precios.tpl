@@ -46,7 +46,7 @@
             <select id="em-filtro-tipo-operacion" class="em-filtro-select">
                 <option value="">Todos</option>
                 <option value="Venta">Venta</option>
-                <option value="Renta">Renta</option>
+                <option value="Renta">Alquiler</option>
             </select>
         </div>
 
@@ -55,7 +55,7 @@
             <select id="em-filtro-tipo-propiedad" class="em-filtro-select">
                 <option value="">Todos</option>
                 <option value="Comercial">Comercial</option>
-                <option value="Habitacional">Habitacional</option>
+                <option value="Habitacional">Residencial</option>
                 <option value="Industrial">Industrial</option>
                 <option value="Terreno">Terreno</option>
                 <option value="Vacacional">Vacacional</option>

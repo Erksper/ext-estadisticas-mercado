@@ -19,6 +19,18 @@ define(
             _filtrosActuales: null,
             _periodoSelect:   null,
 
+            // Helper para transformar etiquetas visualmente
+            _transformarEtiqueta: function(texto) {
+                if (!texto) return texto;
+                var map = {
+                    'Renta': 'Alquiler',
+                    'renta': 'Alquiler',
+                    'Habitacional': 'Residencial',
+                    'Departamento': 'Apartamento'
+                };
+                return map[texto] || texto;
+            },
+
             events: {
                 'click [data-action="buscar"]':    function () { this.buscar(); },
                 'click [data-action="limpiar"]':   function () { this.limpiarFiltros(); },
@@ -27,19 +39,15 @@ define(
                 },
                 'click [data-action="exportar"]':  function () { this.exportar(); },
 
-                // Al cambiar CLA: recargar oficinas y años
                 'change #em-filtro-cla': function () {
                     this._cargarOficinas();
                     if (this._periodoSelect) this._periodoSelect.reloadAnios();
                 },
 
-                // Al cambiar tipo propiedad: recargar subtipos
-                // Si tipo vacío → carga TODOS los subtipos
                 'change #em-filtro-tipo-propiedad': function () {
                     this._cargarSubtipos();
                 },
 
-                // Solo filas clickeables (por urbanización)
                 'click .clickable-row': function (e) {
                     var urb = $(e.currentTarget).text().trim();
                     this._irADetalle({
@@ -60,12 +68,9 @@ define(
             afterRender: function () {
                 this._cargarCLAs();
                 this._iniciarPeriodoSelect();
-                // Cargar todos los subtipos al inicio
                 this._cargarSubtipos();
                 this._restaurarFiltrosDesdeUrl();
             },
-
-            // ── PeriodoSelect ─────────────────────────────────────────────────
 
             _iniciarPeriodoSelect: function () {
                 var self      = this;
@@ -73,7 +78,7 @@ define(
                 if (!container) return;
 
                 this._periodoSelect = new PeriodoSelect(container, {
-                    blockedMonths: [],   // m² por CLA NO excluye nov/dic
+                    blockedMonths: [],
                     getAnios: function (cb) {
                         var claId = self.$el.find('#em-filtro-cla').val() || null;
                         Espo.Ajax.getRequest('EstadisticasMercado/action/getAniosDisponibles', {
@@ -85,8 +90,6 @@ define(
                     }
                 });
             },
-
-            // ── CLAs y Oficinas ───────────────────────────────────────────────
 
             _cargarCLAs: function () {
                 var self = this;
@@ -128,8 +131,6 @@ define(
                     });
             },
 
-            // ── Subtipos (siempre habilitado) ─────────────────────────────────
-
             _cargarSubtipos: function (preseleccionarVal, callback) {
                 var tipo     = this.$el.find('#em-filtro-tipo-propiedad').val();
                 var $subtipo = this.$el.find('#em-filtro-subtipo');
@@ -138,13 +139,14 @@ define(
 
                 var self   = this;
                 var params = {};
-                if (tipo) params.tipoPropiedad = tipo;   // sin tipo → backend devuelve todos
+                if (tipo) params.tipoPropiedad = tipo;
 
                 Espo.Ajax.getRequest('EstadisticasMercado/action/getSubtiposPorTipo', params)
                     .then(function (resp) {
                         var html = '<option value="">Todos</option>';
                         (resp.data || []).forEach(function (s) {
-                            html += '<option value="' + self._esc(s) + '">' + self._esc(s) + '</option>';
+                            var textoMostrar = self._transformarEtiqueta(s);
+                            html += '<option value="' + self._esc(s) + '">' + self._esc(textoMostrar) + '</option>';
                         });
                         $subtipo.html(html).prop('disabled', false);
                         if (preseleccionarVal) $subtipo.val(preseleccionarVal);
@@ -155,8 +157,6 @@ define(
                         if (callback) callback();
                     });
             },
-
-            // ── Restaurar desde URL ───────────────────────────────────────────
 
             _restaurarFiltrosDesdeUrl: function () {
                 var p    = this._filtrosDesdeUrl;
@@ -191,8 +191,6 @@ define(
                     buscarFn();
                 }
             },
-
-            // ── Búsqueda ──────────────────────────────────────────────────────
 
             buscar: function () {
                 var claId   = this.$el.find('#em-filtro-cla').val();
@@ -246,8 +244,6 @@ define(
                     });
             },
 
-            // ── Limpiar ───────────────────────────────────────────────────────
-
             limpiarFiltros: function () {
                 this.$el.find('#em-filtro-cla').val('');
                 this.$el.find('#em-filtro-oficina')
@@ -255,15 +251,12 @@ define(
                 if (this._periodoSelect) this._periodoSelect.reset();
                 this.$el.find('#em-filtro-tipo-operacion').val('');
                 this.$el.find('#em-filtro-tipo-propiedad').val('');
-                // Recargar subtipos con tipo vacío → todos
                 this._cargarSubtipos();
                 this._hayDatos        = false;
                 this._filtrosActuales = null;
                 this.$el.find('[data-action="exportar"]').prop('disabled', true);
                 this._mostrarEstadoInicial();
             },
-
-            // ── Render tabla ──────────────────────────────────────────────────
 
             _renderTabla: function () {
                 var self  = this;
@@ -311,8 +304,6 @@ define(
                 this.$el.find('#em-resultado-container').html(html);
             },
 
-            // ── Exportar ──────────────────────────────────────────────────────
-
             exportar: function () {
                 if (!this._hayDatos) return;
                 var self    = this;
@@ -343,10 +334,9 @@ define(
                 });
             },
 
-            // ── Helpers ───────────────────────────────────────────────────────
-
             _descripcionPeriodo: function (f) {
                 if (!f) return '';
+                var self = this;
                 var partes = [];
                 if (f.claId) {
                     var $opt = this.$el.find('#em-filtro-cla option[value="' + f.claId + '"]');
@@ -366,9 +356,9 @@ define(
                 } else {
                     partes.push('Todos los meses');
                 }
-                if (f.tipoOperacion)    partes.push('Tipo Op.: '   + f.tipoOperacion);
-                if (f.tipoPropiedad)    partes.push('Tipo Prop.: '  + f.tipoPropiedad);
-                if (f.subtipoPropiedad) partes.push('Subtipo: '     + f.subtipoPropiedad);
+                if (f.tipoOperacion)    partes.push('Tipo Op.: '   + self._transformarEtiqueta(f.tipoOperacion));
+                if (f.tipoPropiedad)    partes.push('Tipo Prop.: '  + self._transformarEtiqueta(f.tipoPropiedad));
+                if (f.subtipoPropiedad) partes.push('Subtipo: '     + self._transformarEtiqueta(f.subtipoPropiedad));
                 return partes.join(' | ');
             },
 

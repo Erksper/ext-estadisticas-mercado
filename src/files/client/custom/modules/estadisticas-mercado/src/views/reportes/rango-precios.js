@@ -23,6 +23,18 @@ define(
             _filtrosActuales: null,
             _periodoSelect:   null,
 
+            // Helper para transformar etiquetas visualmente
+            _transformarEtiqueta: function(texto) {
+                if (!texto) return texto;
+                var map = {
+                    'Renta': 'Alquiler',
+                    'renta': 'Alquiler',
+                    'Habitacional': 'Residencial',
+                    'Departamento': 'Apartamento'
+                };
+                return map[texto] || texto;
+            },
+
             events: {
                 'click [data-action="buscar"]':    function () { this.buscar(); },
                 'click [data-action="limpiar"]':   function () { this.limpiarFiltros(); },
@@ -31,19 +43,15 @@ define(
                 },
                 'click [data-action="exportar"]':  function () { this.exportar(); },
 
-                // Al cambiar CLA: recargar oficinas y años
                 'change #em-filtro-cla': function () {
                     this._cargarOficinasPorCLA();
                     if (this._periodoSelect) this._periodoSelect.reloadAnios();
                 },
 
-                // Al cambiar tipo propiedad: recargar subtipos
-                // Si tipo está vacío → carga TODOS los subtipos
                 'change #em-filtro-tipo-propiedad': function () {
                     this._cargarSubtipos();
                 },
 
-                // Clic en cabecera columna (rango de precio)
                 'click .clickable-col': function (e) {
                     var rango = $(e.currentTarget).text().trim();
                     this._irADetalle({
@@ -56,7 +64,6 @@ define(
                     });
                 },
 
-                // Clic en primera celda de fila (subtipo de propiedad)
                 'click .clickable-row': function (e) {
                     var subtipo = $(e.currentTarget).text().trim();
                     this._irADetalle({
@@ -78,12 +85,9 @@ define(
                 this._cargarChartJS();
                 this._cargarCLAs();
                 this._iniciarPeriodoSelect();
-                // Cargar todos los subtipos al inicio (tipo vacío = todos)
                 this._cargarSubtipos();
                 this._restaurarFiltrosDesdeUrl();
             },
-
-            // ── PeriodoSelect ─────────────────────────────────────────────────
 
             _iniciarPeriodoSelect: function () {
                 var self      = this;
@@ -91,7 +95,7 @@ define(
                 if (!container) return;
 
                 this._periodoSelect = new PeriodoSelect(container, {
-                    blockedMonths: [],   // Rango de precios NO excluye nov/dic
+                    blockedMonths: [],
                     getAnios: function (cb) {
                         var claId = self.$el.find('#em-filtro-cla').val() || null;
                         Espo.Ajax.getRequest('EstadisticasMercado/action/getAniosDisponibles', {
@@ -104,16 +108,12 @@ define(
                 });
             },
 
-            // ── ChartJS ───────────────────────────────────────────────────────
-
             _cargarChartJS: function () {
                 if (typeof Chart !== 'undefined') return;
                 var s = document.createElement('script');
                 s.src = 'client/custom/modules/estadisticas-mercado/lib/chart.umd.min.js';
                 document.head.appendChild(s);
             },
-
-            // ── CLAs y Oficinas ───────────────────────────────────────────────
 
             _cargarCLAs: function () {
                 var self = this;
@@ -155,10 +155,6 @@ define(
                     });
             },
 
-            // ── Subtipos (siempre habilitado) ─────────────────────────────────
-            // Si tipo está vacío → devuelve TODOS los subtipos de la BD.
-            // Si hay tipo seleccionado → filtra por ese tipo.
-
             _cargarSubtipos: function (preseleccionarVal, callback) {
                 var tipo     = this.$el.find('#em-filtro-tipo-propiedad').val();
                 var $subtipo = this.$el.find('#em-filtro-subtipo');
@@ -167,13 +163,14 @@ define(
 
                 var self   = this;
                 var params = {};
-                if (tipo) params.tipoPropiedad = tipo;   // sin tipo → el backend devuelve todos
+                if (tipo) params.tipoPropiedad = tipo;
 
                 Espo.Ajax.getRequest('EstadisticasMercado/action/getSubtiposPorTipo', params)
                     .then(function (resp) {
                         var html = '<option value="">Todos</option>';
                         (resp.data || []).forEach(function (s) {
-                            html += '<option value="' + self._esc(s) + '">' + self._esc(s) + '</option>';
+                            var textoMostrar = self._transformarEtiqueta(s);
+                            html += '<option value="' + self._esc(s) + '">' + self._esc(textoMostrar) + '</option>';
                         });
                         $subtipo.html(html).prop('disabled', false);
                         if (preseleccionarVal) $subtipo.val(preseleccionarVal);
@@ -184,8 +181,6 @@ define(
                         if (callback) callback();
                     });
             },
-
-            // ── Restaurar desde URL ───────────────────────────────────────────
 
             _restaurarFiltrosDesdeUrl: function () {
                 var p    = this._filtrosDesdeUrl;
@@ -220,8 +215,6 @@ define(
                     buscarFn();
                 }
             },
-
-            // ── Búsqueda ──────────────────────────────────────────────────────
 
             buscar: function () {
                 var claId   = this.$el.find('#em-filtro-cla').val()              || null;
@@ -277,8 +270,6 @@ define(
                     });
             },
 
-            // ── Limpiar ───────────────────────────────────────────────────────
-
             limpiarFiltros: function () {
                 this.$el.find('#em-filtro-cla').val('');
                 this.$el.find('#em-filtro-oficina')
@@ -286,7 +277,6 @@ define(
                 if (this._periodoSelect) this._periodoSelect.reset();
                 this.$el.find('#em-filtro-tipo-operacion').val('');
                 this.$el.find('#em-filtro-tipo-propiedad').val('');
-                // Recargar subtipos con tipo vacío → todos los subtipos
                 this._cargarSubtipos();
                 this._hayDatos        = false;
                 this._filtrosActuales = null;
@@ -294,8 +284,6 @@ define(
                 if (this._chartInstance) { this._chartInstance.destroy(); this._chartInstance = null; }
                 this._mostrarEstadoInicial();
             },
-
-            // ── Render tabla ──────────────────────────────────────────────────
 
             _renderTabla: function () {
                 var self      = this;
@@ -321,12 +309,13 @@ define(
                             self._esc(rango) + '">' + self._esc(rango) + '</th>';
                 });
                 html += '<th class="col-total">Total</th>';
-                html += '</tr></thead><tbody>';
+                html += '</td></thead><tbody>';
 
                 filas.forEach(function (fila) {
+                    var subtipoMostrar = self._transformarEtiqueta(fila.subtipo);
                     html += '<tr>';
                     html += '<td class="clickable-row" title="Ver detalle de ' +
-                            self._esc(fila.subtipo) + '">' + self._esc(fila.subtipo) + '</td>';
+                            self._esc(subtipoMostrar) + '">' + self._esc(subtipoMostrar) + '</td>';
                     rList.forEach(function (rango) {
                         html += '<td>' + (fila.conteos[rango] || 0) + '</td>';
                     });
@@ -352,8 +341,6 @@ define(
                 var selfRef = this;
                 setTimeout(function () { selfRef._renderGrafico(); }, 50);
             },
-
-            // ── Gráfico ───────────────────────────────────────────────────────
 
             _renderGrafico: function () {
                 if (typeof Chart === 'undefined') return;
@@ -391,8 +378,6 @@ define(
                 });
             },
 
-            // ── Exportar ──────────────────────────────────────────────────────
-
             exportar: function () {
                 if (!this._hayDatos) return;
                 var self    = this;
@@ -400,7 +385,7 @@ define(
                     .concat(this._rangoList)
                     .concat(['Total']);
                 var filasExcel = this._filas.map(function (fila) {
-                    var row = [fila.subtipo];
+                    var row = [self._transformarEtiqueta(fila.subtipo)];
                     self._rangoList.forEach(function (r) { row.push(fila.conteos[r] || 0); });
                     row.push(fila.total);
                     return row;
@@ -421,10 +406,9 @@ define(
                 });
             },
 
-            // ── Helpers ───────────────────────────────────────────────────────
-
             _descripcionPeriodo: function (f) {
                 if (!f) return '';
+                var self = this;
                 var partes = [];
                 if (f.claId) {
                     var $opt = this.$el.find('#em-filtro-cla option[value="' + f.claId + '"]');
@@ -444,9 +428,9 @@ define(
                 } else {
                     partes.push('Todos los meses');
                 }
-                if (f.tipoOperacion)    partes.push('Tipo Op.: '   + f.tipoOperacion);
-                if (f.tipoPropiedad)    partes.push('Tipo Prop.: '  + f.tipoPropiedad);
-                if (f.subtipoPropiedad) partes.push('Subtipo: '     + f.subtipoPropiedad);
+                if (f.tipoOperacion)    partes.push('Tipo Op.: '   + self._transformarEtiqueta(f.tipoOperacion));
+                if (f.tipoPropiedad)    partes.push('Tipo Prop.: '  + self._transformarEtiqueta(f.tipoPropiedad));
+                if (f.subtipoPropiedad) partes.push('Subtipo: '     + self._transformarEtiqueta(f.subtipoPropiedad));
                 return partes.join(' | ');
             },
 
